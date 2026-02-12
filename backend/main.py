@@ -19,8 +19,8 @@ async def root():
     return {"message": "Hello World"}
 
 
-@app.websocket("/matchmake")
-async def matchmake(websocket: WebSocket):
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     try:
         while True:

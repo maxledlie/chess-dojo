@@ -7,7 +7,9 @@ function App() {
     const [ws, setWs] = useState<WebSocket | null>(null);
 
     useEffect(() => {
-        const ws = new WebSocket("ws://localhost:8000/matchmake");
+        const scheme = window.location.protocol === "https:" ? "wss" : "ws";
+        const wsUrl = `${scheme}://${window.location.host}/ws`;
+        const ws = new WebSocket(wsUrl);
         ws.onmessage = handleMessageReceived;
         setWs(ws);
     }, []);
