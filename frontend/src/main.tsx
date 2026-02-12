@@ -5,10 +5,6 @@ import App from './App.tsx'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <body>
-        <div className="root">
-            <App />
-        </div>
-    </body>
+    <App />
   </StrictMode>,
 )
