@@ -1,7 +1,7 @@
 import asyncio
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from models import Message, MessageType
+from models import GameBeginData, GameBeginMessage, MessageBase, MessageType
 from pydantic import BaseModel, ValidationError
 from http import HTTPStatus
 from uuid import UUID, uuid4
@@ -30,7 +30,7 @@ class Game(BaseModel):
 
 
 class ConnectionManager:
-    _clients: dict[UUID, tuple[WebSocket, asyncio.Queue[Message]]] = {}
+    _clients: dict[UUID, tuple[WebSocket, asyncio.Queue[MessageBase]]] = {}
 
     async def connect(self, session_id: UUID, websocket: WebSocket):
         await websocket.accept()
@@ -41,7 +41,7 @@ class ConnectionManager:
     def disconnect(self, session_id: UUID):
         del self._clients[session_id]
 
-    async def send_to(self, session_id: UUID, message: Message):
+    async def send_to(self, session_id: UUID, message: MessageBase):
         (_, q) = self._clients[session_id]
         await q.put(message)
 
@@ -52,10 +52,12 @@ ongoing_games: list[Game] = []
 manager = ConnectionManager()
 
 
-async def consume(session_id: UUID, msg: Message):
+async def consume(session_id: UUID, msg: MessageBase):
     match msg.type:
         case MessageType.GameRequest:
             await handle_game_request(session_id)
+        case MessageType.GameResign:
+            await handle_game_resign(session_id)
         case _:
             raise HTTPException(
                 HTTPStatus.BAD_REQUEST, detail=f"Unexpected message type {msg.type}"
@@ -70,16 +72,16 @@ async def consumer_loop(session_id: UUID, ws: WebSocket):
             break
 
         try:
-            msg = Message.model_validate(data)
+            msg = MessageBase.model_validate(data)
             await consume(session_id, msg)
         except ValidationError:
             raise HTTPException(HTTPStatus.BAD_REQUEST)
 
 
-async def producer_loop(queue: asyncio.Queue[Message], ws: WebSocket):
+async def producer_loop(queue: asyncio.Queue[MessageBase], ws: WebSocket):
     while True:
         msg = await queue.get()
-        await ws.send_json(msg.model_dump())
+        await ws.send_text(msg.model_dump_json())
 
 
 @app.websocket("/ws")
@@ -92,7 +94,6 @@ async def websocket_endpoint(ws: WebSocket):
 
 
 async def handle_game_request(session_id: UUID):
-    print("Handling game request")
     if len(game_requests) > 0:
         try:
             await setup_game(game_requests[0], session_id)
@@ -103,9 +104,20 @@ async def handle_game_request(session_id: UUID):
         game_requests.append(session_id)
 
 
+async def handle_game_resign(session_id: UUID):
+    pass
+
+
 async def setup_game(host_session_id: UUID, joiner_session_id: UUID):
-    await manager.send_to(host_session_id, Message(type=MessageType.GameBegin))
-    await manager.send_to(joiner_session_id, Message(type=MessageType.GameBegin))
+    await manager.send_to(
+        host_session_id, GameBeginMessage(data=GameBeginData(you_are_white=True))
+    )
+    await manager.send_to(
+        joiner_session_id, GameBeginMessage(data=GameBeginData(you_are_white=False))
+    )
+    ongoing_games.append(
+        Game(host_session_id=host_session_id, joiner_session_id=joiner_session_id)
+    )
 
 
 game_requests = []

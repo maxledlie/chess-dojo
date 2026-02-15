@@ -3,9 +3,14 @@ import "./App.css";
 
 type State = "idle" | "lobby" | "playing";
 
+interface GameBeginData {
+    you_are_white: boolean;
+}
+
 function App() {
     const [ws, setWs] = useState<WebSocket | null>(null);
     const [state, setState] = useState<State>("idle");
+    const [isWhite, setIsWhite] = useState<boolean>(false);
 
     useEffect(() => {
         const scheme = window.location.protocol === "https:" ? "wss" : "ws";
@@ -16,12 +21,14 @@ function App() {
     }, []);
 
     function handleMessageReceived(ev: MessageEvent<any>) {
-        console.log("Message received", ev);
+        console.log("Message received", ev, ev.data);
         const msg = JSON.parse(ev.data);
         switch (msg.type) {
-            case "game_begin":
-                console.log("Got a game!");
+            case "game_begin": {
+                const data: GameBeginData = msg.data;
                 setState("playing");
+                setIsWhite(data.you_are_white);
+            }
         }
     }
 
@@ -35,11 +42,16 @@ function App() {
 
     return (
         <>
-            <h1>Websocket Demo</h1>
+            <h1>Minimalist Chess</h1>
             {state === "playing" && (
-                <button onClick={() => sendMessage({ type: "game_resign" })}>
-                    Resign
-                </button>
+                <>
+                    <p>You are {isWhite ? "white" : "black"}</p>
+                    <button
+                        onClick={() => sendMessage({ type: "game_resign" })}
+                    >
+                        Resign
+                    </button>
+                </>
             )}
             {state === "lobby" && <p>Waiting for a game...</p>}
             {state === "idle" && (
