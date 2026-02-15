@@ -1,10 +1,12 @@
 import asyncio
+import string
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from models import GameBeginData, GameBeginMessage, MessageBase, MessageType
+from models import GameCompleteMsg, Message, GameResignMsg, GameBeginMsg
 from pydantic import BaseModel, ValidationError
 from http import HTTPStatus
 from uuid import UUID, uuid4
+import secrets
 
 
 app = FastAPI()
@@ -25,12 +27,12 @@ async def root():
 
 
 class Game(BaseModel):
-    host_session_id: UUID
-    joiner_session_id: UUID
+    white_session_id: UUID
+    black_session_id: UUID
 
 
 class ConnectionManager:
-    _clients: dict[UUID, tuple[WebSocket, asyncio.Queue[MessageBase]]] = {}
+    _clients: dict[UUID, tuple[WebSocket, asyncio.Queue[Message]]] = {}
 
     async def connect(self, session_id: UUID, websocket: WebSocket):
         await websocket.accept()
@@ -41,26 +43,27 @@ class ConnectionManager:
     def disconnect(self, session_id: UUID):
         del self._clients[session_id]
 
-    async def send_to(self, session_id: UUID, message: MessageBase):
+    async def send_to(self, session_id: UUID, message: Message):
         (_, q) = self._clients[session_id]
         await q.put(message)
 
 
 game_requests: list[UUID] = []
-pending_games: list[Game] = []
-ongoing_games: list[Game] = []
+ongoing_games: dict[str, Game] = {}
 manager = ConnectionManager()
 
 
-async def consume(session_id: UUID, msg: MessageBase):
-    match msg.type:
-        case MessageType.GameRequest:
+async def consume(session_id: UUID, msg: Message):
+    data = msg.data
+    match data.msg_type:
+        case "game_request":
             await handle_game_request(session_id)
-        case MessageType.GameResign:
-            await handle_game_resign(session_id)
+        case "game_resign":
+            await handle_game_resign(session_id, data)
         case _:
             raise HTTPException(
-                HTTPStatus.BAD_REQUEST, detail=f"Unexpected message type {msg.type}"
+                HTTPStatus.BAD_REQUEST,
+                detail=f"Unexpected message type {msg.data.msg_type}",
             )
 
 
@@ -72,13 +75,13 @@ async def consumer_loop(session_id: UUID, ws: WebSocket):
             break
 
         try:
-            msg = MessageBase.model_validate(data)
+            msg = Message.model_validate(data)
             await consume(session_id, msg)
         except ValidationError:
             raise HTTPException(HTTPStatus.BAD_REQUEST)
 
 
-async def producer_loop(queue: asyncio.Queue[MessageBase], ws: WebSocket):
+async def producer_loop(queue: asyncio.Queue[Message], ws: WebSocket):
     while True:
         msg = await queue.get()
         await ws.send_text(msg.model_dump_json())
@@ -104,20 +107,42 @@ async def handle_game_request(session_id: UUID):
         game_requests.append(session_id)
 
 
-async def handle_game_resign(session_id: UUID):
-    pass
+async def handle_game_resign(session_id: UUID, msg: GameResignMsg):
+    # Broadcast the result to both players
+    game = ongoing_games.get(msg.game_id)
+    if game is None:
+        return
+
+    if session_id not in [game.white_session_id, game.black_session_id]:
+        # TODO: Logging
+        return
+
+    result = "white" if session_id == game.black_session_id else "black"
+
+    completion_msg = GameCompleteMsg(game_id=msg.game_id, result=result)
+    for session_id in [game.white_session_id, game.black_session_id]:
+        await manager.send_to(session_id, Message(data=completion_msg))
+
+    # TODO: Don't delete the game record until completion acknowledged by both parties.
+    # (And require similar acknowledgement in other cases)
+    del ongoing_games[msg.game_id]
 
 
 async def setup_game(host_session_id: UUID, joiner_session_id: UUID):
+    # Randomly generate a unique identifier for the game
+    game_id = generate_game_id()
     await manager.send_to(
-        host_session_id, GameBeginMessage(data=GameBeginData(you_are_white=True))
+        host_session_id, Message(data=GameBeginMsg(game_id=game_id, you_are_white=True))
     )
     await manager.send_to(
-        joiner_session_id, GameBeginMessage(data=GameBeginData(you_are_white=False))
+        joiner_session_id,
+        Message(data=GameBeginMsg(game_id=game_id, you_are_white=False)),
     )
-    ongoing_games.append(
-        Game(host_session_id=host_session_id, joiner_session_id=joiner_session_id)
+    ongoing_games[game_id] = Game(
+        white_session_id=host_session_id, black_session_id=joiner_session_id
     )
 
 
-game_requests = []
+def generate_game_id(length: int = 12) -> str:
+    alphabet = string.ascii_letters + string.digits
+    return "".join(secrets.choice(alphabet) for _ in range(12))

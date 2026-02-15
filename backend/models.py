@@ -1,32 +1,30 @@
-from uuid import UUID
-from pydantic import BaseModel
-from enum import Enum
+from typing import Literal, Union
+from pydantic import BaseModel, Field
 
 
-class MessageType(str, Enum):
-    GameRequest = "game_request"
-    GameBegin = "game_begin"
-    GameResign = "game_resign"
-    GameComplete = "game_complete"
+class GameRequestMsg(BaseModel):
+    msg_type: Literal["game_request"] = "game_request"
 
 
-class MessageBase(BaseModel):
-    type: MessageType
-
-
-class GameBeginData(BaseModel):
+class GameBeginMsg(BaseModel):
+    msg_type: Literal["game_begin"] = "game_begin"
     you_are_white: bool
+    game_id: str
 
 
-class GameBeginMessage(MessageBase):
-    type: MessageType = MessageType.GameBegin
-    data: GameBeginData
+class GameResignMsg(BaseModel):
+    msg_type: Literal["game_resign"] = "game_resign"
+    game_id: str
 
 
-class GameCompleteData(BaseModel):
-    winner_id: UUID | None
+class GameCompleteMsg(BaseModel):
+    msg_type: Literal["game_complete"] = "game_complete"
+    game_id: str
+    result: Literal["white", "black", "draw"]
 
 
-class GameCompleteMessage(MessageBase):
-    type: MessageType = MessageType.GameComplete
-    data: GameCompleteData
+MessagePayload = Union[GameRequestMsg, GameBeginMsg, GameResignMsg, GameCompleteMsg]
+
+
+class Message(BaseModel):
+    data: MessagePayload = Field(discriminator="msg_type")

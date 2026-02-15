@@ -4,13 +4,25 @@ import "./App.css";
 type State = "idle" | "lobby" | "playing";
 
 interface GameBeginData {
+    msg_type: "game_begin";
     you_are_white: boolean;
+    game_id: string;
 }
+
+interface GameCompleteData {
+    msg_type: "game_complete";
+    game_id: string;
+    result: GameResult;
+}
+
+type GameResult = "white" | "black" | "draw" | null;
 
 function App() {
     const [ws, setWs] = useState<WebSocket | null>(null);
     const [state, setState] = useState<State>("idle");
     const [isWhite, setIsWhite] = useState<boolean>(false);
+    const [result, setResult] = useState<GameResult>(null);
+    const [gameId, setGameId] = useState<string | null>(null);
 
     useEffect(() => {
         const scheme = window.location.protocol === "https:" ? "wss" : "ws";
@@ -22,12 +34,21 @@ function App() {
 
     function handleMessageReceived(ev: MessageEvent<any>) {
         console.log("Message received", ev, ev.data);
-        const msg = JSON.parse(ev.data);
-        switch (msg.type) {
+        const msg = JSON.parse(ev.data).data;
+        switch (msg.msg_type) {
             case "game_begin": {
-                const data: GameBeginData = msg.data;
+                const data: GameBeginData = msg;
+                console.log("game_begin received", data);
                 setState("playing");
                 setIsWhite(data.you_are_white);
+                setGameId(data.game_id);
+                break;
+            }
+            case "game_complete": {
+                const data: GameCompleteData = msg;
+                setResult(data.result);
+                setState("idle");
+                break;
             }
         }
     }
@@ -37,7 +58,16 @@ function App() {
             console.error("Web socket not established!");
             return;
         }
-        ws.send(JSON.stringify(msg));
+        ws.send(JSON.stringify({ data: msg }));
+    }
+
+    let resultMessage = "";
+    if (result === "white") {
+        resultMessage = isWhite ? "You win!" : "You lose!";
+    } else if (result === "black") {
+        resultMessage = isWhite ? "You lose!" : "You win!";
+    } else if (result === "draw") {
+        resultMessage = "It's a draw.";
     }
 
     return (
@@ -45,9 +75,14 @@ function App() {
             <h1>Minimalist Chess</h1>
             {state === "playing" && (
                 <>
-                    <p>You are {isWhite ? "white" : "black"}</p>
+                    <p>You have the {isWhite ? "white" : "black"} pieces.</p>
                     <button
-                        onClick={() => sendMessage({ type: "game_resign" })}
+                        onClick={() =>
+                            sendMessage({
+                                msg_type: "game_resign",
+                                game_id: gameId,
+                            })
+                        }
                     >
                         Resign
                     </button>
@@ -55,14 +90,17 @@ function App() {
             )}
             {state === "lobby" && <p>Waiting for a game...</p>}
             {state === "idle" && (
-                <button
-                    onClick={() => {
-                        sendMessage({ type: "game_request" });
-                        setState("lobby");
-                    }}
-                >
-                    Play!
-                </button>
+                <>
+                    {resultMessage}
+                    <button
+                        onClick={() => {
+                            sendMessage({ msg_type: "game_request" });
+                            setState("lobby");
+                        }}
+                    >
+                        Play!
+                    </button>
+                </>
             )}
         </>
     );
