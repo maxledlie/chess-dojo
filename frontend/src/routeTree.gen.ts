@@ -9,12 +9,48 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TrainingRouteImport } from './routes/training'
+import { Route as PlayerRouteImport } from './routes/player'
+import { Route as LearnRouteImport } from './routes/learn'
+import { Route as BroadcastRouteImport } from './routes/broadcast'
+import { Route as AnalysisRouteImport } from './routes/analysis'
 import { Route as AboutRouteImport } from './routes/about'
+import { Route as GameIdRouteImport } from './routes/$gameId'
 import { Route as IndexRouteImport } from './routes/index'
 
+const TrainingRoute = TrainingRouteImport.update({
+  id: '/training',
+  path: '/training',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlayerRoute = PlayerRouteImport.update({
+  id: '/player',
+  path: '/player',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LearnRoute = LearnRouteImport.update({
+  id: '/learn',
+  path: '/learn',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BroadcastRoute = BroadcastRouteImport.update({
+  id: '/broadcast',
+  path: '/broadcast',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AnalysisRoute = AnalysisRouteImport.update({
+  id: '/analysis',
+  path: '/analysis',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
   path: '/about',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GameIdRoute = GameIdRouteImport.update({
+  id: '/$gameId',
+  path: '/$gameId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -25,37 +61,128 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/$gameId': typeof GameIdRoute
   '/about': typeof AboutRoute
+  '/analysis': typeof AnalysisRoute
+  '/broadcast': typeof BroadcastRoute
+  '/learn': typeof LearnRoute
+  '/player': typeof PlayerRoute
+  '/training': typeof TrainingRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/$gameId': typeof GameIdRoute
   '/about': typeof AboutRoute
+  '/analysis': typeof AnalysisRoute
+  '/broadcast': typeof BroadcastRoute
+  '/learn': typeof LearnRoute
+  '/player': typeof PlayerRoute
+  '/training': typeof TrainingRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/$gameId': typeof GameIdRoute
   '/about': typeof AboutRoute
+  '/analysis': typeof AnalysisRoute
+  '/broadcast': typeof BroadcastRoute
+  '/learn': typeof LearnRoute
+  '/player': typeof PlayerRoute
+  '/training': typeof TrainingRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/about'
+  fullPaths:
+    | '/'
+    | '/$gameId'
+    | '/about'
+    | '/analysis'
+    | '/broadcast'
+    | '/learn'
+    | '/player'
+    | '/training'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/about'
-  id: '__root__' | '/' | '/about'
+  to:
+    | '/'
+    | '/$gameId'
+    | '/about'
+    | '/analysis'
+    | '/broadcast'
+    | '/learn'
+    | '/player'
+    | '/training'
+  id:
+    | '__root__'
+    | '/'
+    | '/$gameId'
+    | '/about'
+    | '/analysis'
+    | '/broadcast'
+    | '/learn'
+    | '/player'
+    | '/training'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  GameIdRoute: typeof GameIdRoute
   AboutRoute: typeof AboutRoute
+  AnalysisRoute: typeof AnalysisRoute
+  BroadcastRoute: typeof BroadcastRoute
+  LearnRoute: typeof LearnRoute
+  PlayerRoute: typeof PlayerRoute
+  TrainingRoute: typeof TrainingRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/training': {
+      id: '/training'
+      path: '/training'
+      fullPath: '/training'
+      preLoaderRoute: typeof TrainingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/player': {
+      id: '/player'
+      path: '/player'
+      fullPath: '/player'
+      preLoaderRoute: typeof PlayerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/learn': {
+      id: '/learn'
+      path: '/learn'
+      fullPath: '/learn'
+      preLoaderRoute: typeof LearnRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/broadcast': {
+      id: '/broadcast'
+      path: '/broadcast'
+      fullPath: '/broadcast'
+      preLoaderRoute: typeof BroadcastRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/analysis': {
+      id: '/analysis'
+      path: '/analysis'
+      fullPath: '/analysis'
+      preLoaderRoute: typeof AnalysisRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/about': {
       id: '/about'
       path: '/about'
       fullPath: '/about'
       preLoaderRoute: typeof AboutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/$gameId': {
+      id: '/$gameId'
+      path: '/$gameId'
+      fullPath: '/$gameId'
+      preLoaderRoute: typeof GameIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -70,7 +197,13 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  GameIdRoute: GameIdRoute,
   AboutRoute: AboutRoute,
+  AnalysisRoute: AnalysisRoute,
+  BroadcastRoute: BroadcastRoute,
+  LearnRoute: LearnRoute,
+  PlayerRoute: PlayerRoute,
+  TrainingRoute: TrainingRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

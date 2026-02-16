@@ -1,0 +1,38 @@
+:root {
+    --topbar-h: 60px;
+}
+
+body {
+    margin: 0;
+    background-color: #ecebe8;
+}
+
+header {
+    height: var(--topbar-h);
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+}
+
+nav {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.navlink {
+    height: var(--topbar-h);
+    display: inline-flex;
+    align-items: center;
+    font-family: sans-serif;
+    color: #4d4d4d;
+    text-decoration: none;
+    line-height: 1;
+}
+
+.navlink-title {
+    font-family: serif;
+    font-size: 40px;
+    line-height: 1;
+    transform: translateY(-4px);
+}
