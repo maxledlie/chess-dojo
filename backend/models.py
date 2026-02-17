@@ -1,5 +1,6 @@
 from typing import Literal, Union
 from pydantic import BaseModel, Field
+from datetime import datetime
 
 # ------------------------
 # HTTP
@@ -36,7 +37,26 @@ class GameCompleteMsg(BaseModel):
     result: Literal["white", "black", "draw"]
 
 
-MessagePayload = Union[GameRequestMsg, GameBeginMsg, GameResignMsg, GameCompleteMsg]
+class ChatSendMsg(BaseModel):
+    msg_type: Literal["chat_send"] = "chat_send"
+    game_id: str
+    message: str = Field(min_length=1, max_length=512)
+
+
+class ChatReceiveMsg(BaseModel):
+    msg_type: Literal["chat_receive"] = "chat_receive"
+    message: str
+    timestamp: datetime
+
+
+MessagePayload = Union[
+    GameRequestMsg,
+    GameBeginMsg,
+    GameResignMsg,
+    GameCompleteMsg,
+    ChatSendMsg,
+    ChatReceiveMsg,
+]
 
 
 class Message(BaseModel):

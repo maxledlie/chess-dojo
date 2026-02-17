@@ -1,6 +1,7 @@
 import asyncio
 import os
 import string
+from datetime import datetime, UTC
 from fastapi import (
     APIRouter,
     FastAPI,
@@ -12,6 +13,8 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from models import (
+    ChatReceiveMsg,
+    ChatSendMsg,
     GameCompleteMsg,
     Message,
     GameResignMsg,
@@ -68,6 +71,8 @@ async def consume(state: AppState, session_id: str, msg: Message):
             await handle_game_request(state, session_id)
         case "game_resign":
             await handle_game_resign(state, session_id, data)
+        case "chat_send":
+            await handle_chat_send(state, session_id, data)
         case _:
             raise HTTPException(
                 HTTPStatus.BAD_REQUEST,
@@ -161,6 +166,28 @@ async def handle_game_resign(state: AppState, session_id: str, msg: GameResignMs
     # TODO: Don't delete the game record until completion acknowledged by both parties.
     # (And require similar acknowledgement in other cases)
     del state.ongoing_games[msg.game_id]
+
+
+async def handle_chat_send(state: AppState, session_id: str, msg: ChatSendMsg):
+    timestamp = datetime.now(UTC)
+    # Eventual TODO: Chat content filtering
+
+    game = state.ongoing_games.get(msg.game_id, None)
+    if game is None:
+        return
+
+    if session_id == game.white_session_id:
+        receiver_session_id = game.black_session_id
+    elif session_id == game.black_session_id:
+        receiver_session_id = game.white_session_id
+    else:
+        # Someone tried to send a message to a game they're not playing in
+        return
+
+    outgoing_msg = Message(
+        data=ChatReceiveMsg(timestamp=timestamp, message=msg.message)
+    )
+    await state.manager.send_to(receiver_session_id, outgoing_msg)
 
 
 async def setup_game(state: AppState, host_session_id: str, joiner_session_id: str):

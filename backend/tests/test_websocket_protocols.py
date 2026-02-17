@@ -3,7 +3,7 @@ from typing import ContextManager, Iterator, Callable
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.testclient import WebSocketTestSession
-from models import GameBeginMsg, GameRequestMsg, Message
+from models import ChatSendMsg, ChatReceiveMsg, GameBeginMsg, GameRequestMsg, Message
 from main import create_app
 import pytest
 import os
@@ -21,6 +21,7 @@ WSFactory = Callable[[], ContextManager[WebSocketTestSession]]
 def app():
     return create_app()
 
+
 @pytest.fixture
 def ws_user(app: FastAPI) -> WSFactory:
     @contextmanager
@@ -34,11 +35,11 @@ def ws_user(app: FastAPI) -> WSFactory:
     return _ws_user
 
 
-def test_trivial_matchmaking(ws_user: WSFactory):
-    game_request = Message(data=GameRequestMsg())
+def test_happy_path(ws_user: WSFactory):
+    game_msg = Message(data=GameRequestMsg())
     with ws_user() as ws1, ws_user() as ws2:
-        ws1.send_json(game_request.model_dump())
-        ws2.send_json(game_request.model_dump())
+        ws1.send_json(game_msg.model_dump())
+        ws2.send_json(game_msg.model_dump())
 
         # Both clients should receive the same game ID
         res1 = Message.model_validate(ws1.receive_json())
@@ -48,3 +49,11 @@ def test_trivial_matchmaking(ws_user: WSFactory):
             res2.data, GameBeginMsg
         )
         assert res1.data.game_id == res2.data.game_id
+
+        # Subsequent chat requests within that game should be routed to the other player
+        chat_msg = Message(data=ChatSendMsg(message="glhf", game_id=res1.data.game_id))
+        ws1.send_json(chat_msg.model_dump())
+
+        chat_res = Message.model_validate(ws2.receive_json())
+        assert isinstance(chat_res.data, ChatReceiveMsg)
+        assert chat_res.data.message == "glhf"
