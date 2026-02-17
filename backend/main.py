@@ -1,12 +1,27 @@
 import asyncio
+import os
 import string
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    Request,
+    Response,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
-from models import GameCompleteMsg, Message, GameResignMsg, GameBeginMsg
+from models import (
+    GameCompleteMsg,
+    Message,
+    GameResignMsg,
+    GameBeginMsg,
+    SessionResponse,
+)
 from pydantic import BaseModel, ValidationError
 from http import HTTPStatus
-from uuid import UUID, uuid4
+from guest_auth import ensure_guest_session, get_session_id_from_ws
 import secrets
+from dotenv import load_dotenv
 
 
 app = FastAPI()
@@ -21,39 +36,44 @@ app.add_middleware(
 )
 
 
+load_dotenv()
+ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173")
+ALLOWED_ORIGINS = ALLOWED_ORIGINS.split(",")
+
+
 @app.get("/")
 async def root():
     return {"message": "Hello World"}
 
 
 class Game(BaseModel):
-    white_session_id: UUID
-    black_session_id: UUID
+    white_session_id: str
+    black_session_id: str
 
 
 class ConnectionManager:
-    _clients: dict[UUID, tuple[WebSocket, asyncio.Queue[Message]]] = {}
+    _clients: dict[str, tuple[WebSocket, asyncio.Queue[Message]]] = {}
 
-    async def connect(self, session_id: UUID, websocket: WebSocket):
+    async def connect(self, session_id: str, websocket: WebSocket):
         await websocket.accept()
         queue = asyncio.Queue()
         self._clients[session_id] = (websocket, queue)
         return queue
 
-    def disconnect(self, session_id: UUID):
+    def disconnect(self, session_id: str):
         del self._clients[session_id]
 
-    async def send_to(self, session_id: UUID, message: Message):
+    async def send_to(self, session_id: str, message: Message):
         (_, q) = self._clients[session_id]
         await q.put(message)
 
 
-game_requests: list[UUID] = []
+game_requests: list[str] = []
 ongoing_games: dict[str, Game] = {}
 manager = ConnectionManager()
 
 
-async def consume(session_id: UUID, msg: Message):
+async def consume(session_id: str, msg: Message):
     data = msg.data
     match data.msg_type:
         case "game_request":
@@ -67,7 +87,7 @@ async def consume(session_id: UUID, msg: Message):
             )
 
 
-async def consumer_loop(session_id: UUID, ws: WebSocket):
+async def consumer_loop(session_id: str, ws: WebSocket):
     while True:
         try:
             data = await ws.receive_json()
@@ -87,16 +107,35 @@ async def producer_loop(queue: asyncio.Queue[Message], ws: WebSocket):
         await ws.send_text(msg.model_dump_json())
 
 
+@app.get(
+    "/session",
+    description="""If using cress as a guest, call this endpoint before establishing a websocket connection
+    to receive a session cookie. This will enable you to rejoin a game in the event of a temporary disconnection.""",
+    response_model=SessionResponse,
+)
+async def ensure_session(request: Request, response: Response):
+    return ensure_guest_session(request, response)
+
+
 @app.websocket("/ws")
-async def matchmake(ws: WebSocket):
-    session_id = uuid4()
+async def websocket_endpoint(ws: WebSocket):
+    origin = ws.headers.get("origin")
+    if origin is None or origin not in ALLOWED_ORIGINS:
+        await ws.close(code=1008)  # Policy violation
+        return
+
+    session_id = get_session_id_from_ws(ws)
+    if not session_id:
+        await ws.close(3000)  # Unauthorized
+        return
+
     outgoing = await manager.connect(session_id, ws)
 
     # TODO: Handle disconnect
     await asyncio.gather(consumer_loop(session_id, ws), producer_loop(outgoing, ws))
 
 
-async def handle_game_request(session_id: UUID):
+async def handle_game_request(session_id: str):
     if len(game_requests) > 0:
         try:
             await setup_game(game_requests[0], session_id)
@@ -107,7 +146,7 @@ async def handle_game_request(session_id: UUID):
         game_requests.append(session_id)
 
 
-async def handle_game_resign(session_id: UUID, msg: GameResignMsg):
+async def handle_game_resign(session_id: str, msg: GameResignMsg):
     # Broadcast the result to both players
     game = ongoing_games.get(msg.game_id)
     if game is None:
@@ -128,7 +167,7 @@ async def handle_game_resign(session_id: UUID, msg: GameResignMsg):
     del ongoing_games[msg.game_id]
 
 
-async def setup_game(host_session_id: UUID, joiner_session_id: UUID):
+async def setup_game(host_session_id: str, joiner_session_id: str):
     # Randomly generate a unique identifier for the game
     game_id = generate_game_id()
     await manager.send_to(

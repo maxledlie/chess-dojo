@@ -1,3 +1,7 @@
 # Python stuff
 .venv
 *.pyc
+
+
+# Environment secrets
+.env

@@ -1,6 +1,19 @@
 from typing import Literal, Union
 from pydantic import BaseModel, Field
 
+# ------------------------
+# HTTP
+# ------------------------
+
+
+class SessionResponse(BaseModel):
+    session_id: str
+
+
+# ------------------------
+# WEBSOCKET
+# ------------------------
+
 
 class GameRequestMsg(BaseModel):
     msg_type: Literal["game_request"] = "game_request"
