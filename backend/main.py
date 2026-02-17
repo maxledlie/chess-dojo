@@ -2,6 +2,7 @@ import asyncio
 import os
 import string
 from fastapi import (
+    APIRouter,
     FastAPI,
     HTTPException,
     Request,
@@ -22,33 +23,7 @@ from http import HTTPStatus
 from guest_auth import ensure_guest_session, get_session_id_from_ws
 import secrets
 from dotenv import load_dotenv
-
-
-app = FastAPI()
-
-# TODO: Get frontend origin from environment variables for deployment
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-load_dotenv()
-ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173")
-ALLOWED_ORIGINS = ALLOWED_ORIGINS.split(",")
-
-
-@app.get("/")
-async def root():
-    return {"message": "Hello World"}
-
-
-class Game(BaseModel):
-    white_session_id: str
-    black_session_id: str
+from dataclasses import dataclass, field
 
 
 class ConnectionManager:
@@ -68,18 +43,31 @@ class ConnectionManager:
         await q.put(message)
 
 
-game_requests: list[str] = []
-ongoing_games: dict[str, Game] = {}
-manager = ConnectionManager()
+class Game(BaseModel):
+    white_session_id: str
+    black_session_id: str
 
 
-async def consume(session_id: str, msg: Message):
+# Move this state into something like Redis later for persistence through redeploys
+@dataclass
+class AppState:
+    game_requests: list[str] = field(default_factory=list)
+    ongoing_games: dict[str, Game] = field(default_factory=dict)
+    manager: ConnectionManager = ConnectionManager()
+
+
+load_dotenv()
+ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173")
+ALLOWED_ORIGINS = ALLOWED_ORIGINS.split(",")
+
+
+async def consume(state: AppState, session_id: str, msg: Message):
     data = msg.data
     match data.msg_type:
         case "game_request":
-            await handle_game_request(session_id)
+            await handle_game_request(state, session_id)
         case "game_resign":
-            await handle_game_resign(session_id, data)
+            await handle_game_resign(state, session_id, data)
         case _:
             raise HTTPException(
                 HTTPStatus.BAD_REQUEST,
@@ -87,7 +75,7 @@ async def consume(session_id: str, msg: Message):
             )
 
 
-async def consumer_loop(session_id: str, ws: WebSocket):
+async def consumer_loop(state: AppState, session_id: str, ws: WebSocket):
     while True:
         try:
             data = await ws.receive_json()
@@ -96,18 +84,23 @@ async def consumer_loop(session_id: str, ws: WebSocket):
 
         try:
             msg = Message.model_validate(data)
-            await consume(session_id, msg)
+            print(f"Message from {session_id}: {msg}")
+            await consume(state, session_id, msg)
         except ValidationError:
             raise HTTPException(HTTPStatus.BAD_REQUEST)
 
 
-async def producer_loop(queue: asyncio.Queue[Message], ws: WebSocket):
+async def producer_loop(queue: asyncio.Queue[Message], session_id: str, ws: WebSocket):
     while True:
         msg = await queue.get()
+        print(f"Message to {session_id}: {msg}")
         await ws.send_text(msg.model_dump_json())
 
 
-@app.get(
+router = APIRouter()
+
+
+@router.get(
     "/session",
     description="""If using cress as a guest, call this endpoint before establishing a websocket connection
     to receive a session cookie. This will enable you to rejoin a game in the event of a temporary disconnection.""",
@@ -117,8 +110,9 @@ async def ensure_session(request: Request, response: Response):
     return ensure_guest_session(request, response)
 
 
-@app.websocket("/ws")
+@router.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
+    state: AppState = ws.app.state.state
     origin = ws.headers.get("origin")
     if origin is None or origin not in ALLOWED_ORIGINS:
         await ws.close(code=1008)  # Policy violation
@@ -129,26 +123,28 @@ async def websocket_endpoint(ws: WebSocket):
         await ws.close(3000)  # Unauthorized
         return
 
-    outgoing = await manager.connect(session_id, ws)
+    outgoing = await state.manager.connect(session_id, ws)
 
     # TODO: Handle disconnect
-    await asyncio.gather(consumer_loop(session_id, ws), producer_loop(outgoing, ws))
+    await asyncio.gather(
+        consumer_loop(state, session_id, ws), producer_loop(outgoing, session_id, ws)
+    )
 
 
-async def handle_game_request(session_id: str):
-    if len(game_requests) > 0:
+async def handle_game_request(state: AppState, session_id: str):
+    if len(state.game_requests) > 0:
         try:
-            await setup_game(game_requests[0], session_id)
+            await setup_game(state, state.game_requests[0], session_id)
         except IndexError:
             # There's a chance a different player might have jumped in with that host in the meantime
             raise HTTPException(500, "Unhandled concurrency error")
     else:
-        game_requests.append(session_id)
+        state.game_requests.append(session_id)
 
 
-async def handle_game_resign(session_id: str, msg: GameResignMsg):
+async def handle_game_resign(state: AppState, session_id: str, msg: GameResignMsg):
     # Broadcast the result to both players
-    game = ongoing_games.get(msg.game_id)
+    game = state.ongoing_games.get(msg.game_id)
     if game is None:
         return
 
@@ -160,24 +156,24 @@ async def handle_game_resign(session_id: str, msg: GameResignMsg):
 
     completion_msg = GameCompleteMsg(game_id=msg.game_id, result=result)
     for session_id in [game.white_session_id, game.black_session_id]:
-        await manager.send_to(session_id, Message(data=completion_msg))
+        await state.manager.send_to(session_id, Message(data=completion_msg))
 
     # TODO: Don't delete the game record until completion acknowledged by both parties.
     # (And require similar acknowledgement in other cases)
-    del ongoing_games[msg.game_id]
+    del state.ongoing_games[msg.game_id]
 
 
-async def setup_game(host_session_id: str, joiner_session_id: str):
+async def setup_game(state: AppState, host_session_id: str, joiner_session_id: str):
     # Randomly generate a unique identifier for the game
     game_id = generate_game_id()
-    await manager.send_to(
+    await state.manager.send_to(
         host_session_id, Message(data=GameBeginMsg(game_id=game_id, you_are_white=True))
     )
-    await manager.send_to(
+    await state.manager.send_to(
         joiner_session_id,
         Message(data=GameBeginMsg(game_id=game_id, you_are_white=False)),
     )
-    ongoing_games[game_id] = Game(
+    state.ongoing_games[game_id] = Game(
         white_session_id=host_session_id, black_session_id=joiner_session_id
     )
 
@@ -185,3 +181,19 @@ async def setup_game(host_session_id: str, joiner_session_id: str):
 def generate_game_id(length: int = 12) -> str:
     alphabet = string.ascii_letters + string.digits
     return "".join(secrets.choice(alphabet) for _ in range(12))
+
+
+def create_app() -> FastAPI:
+    app = FastAPI()
+    app.state.state = AppState()
+    app.include_router(router)
+
+    # TODO: Get frontend origin from environment variables for deployment
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    return app
