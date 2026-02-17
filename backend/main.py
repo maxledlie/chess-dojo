@@ -88,7 +88,7 @@ async def producer_loop(queue: asyncio.Queue[Message], ws: WebSocket):
 
 
 @app.websocket("/ws")
-async def websocket_endpoint(ws: WebSocket):
+async def matchmake(ws: WebSocket):
     session_id = uuid4()
     outgoing = await manager.connect(session_id, ws)
 
