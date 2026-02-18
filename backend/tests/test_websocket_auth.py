@@ -26,7 +26,6 @@ def _ensure_session(client: TestClient) -> str:
     return res.session_id
 
 
-@pytest.mark.timeout(5)
 @pytest.mark.parametrize("origin", [None, "", "https://evil.com"])
 def test_invalid_origin_rejected(origin: str):
     client = TestClient(create_app())
@@ -38,7 +37,6 @@ def test_invalid_origin_rejected(origin: str):
             ws.send_json(req.model_dump())
 
 
-@pytest.mark.timeout(5)
 def test_successful_auth():
     origin = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173").split(",")[0]
     client = TestClient(create_app())

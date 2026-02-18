@@ -1,0 +1,28 @@
+:root {
+    --board-size: calc(min(90vw, 90vh));
+    --sidebar-width: calc(0.4 * (100vw - var(--board-size)));
+}
+
+.game-layout {
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    max-height: 90vh;
+}
+
+.chat-panel {
+    display: flex;
+    flex-direction: column;
+    width: var(--sidebar-width);
+    padding-right: 20px;
+}
+
+.board-panel {
+    width: var(--board-size);
+    height: var(--board-size);
+}
+
+.move-panel {
+    max-height: 90vh;
+    width: var(--sidebar-width);
+}

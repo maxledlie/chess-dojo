@@ -11,12 +11,6 @@ interface GameBeginData {
     game_id: string;
 }
 
-interface GameCompleteData {
-    msg_type: "game_complete";
-    game_id: string;
-    result: GameResult;
-}
-
 type GameResult = "white" | "black" | "draw" | null;
 
 function Index() {

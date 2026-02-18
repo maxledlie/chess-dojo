@@ -27,7 +27,6 @@ from http import HTTPStatus
 from guest_auth import ensure_guest_session, get_session_id_from_ws
 import secrets
 from dotenv import load_dotenv
-from dataclasses import dataclass, field
 
 
 class ConnectionManager:
@@ -307,3 +306,6 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     return app
+
+
+app = create_app()

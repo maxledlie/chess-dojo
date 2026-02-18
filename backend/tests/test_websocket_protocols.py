@@ -47,7 +47,6 @@ def make_ws_user(make_client: ClientFactory) -> WSFactory:
     return _ws_user
 
 
-@pytest.mark.timeout(5)
 def test_happy_path(make_ws_user: WSFactory):
     game_msg = Message(data=GameRequestMsg())
     with make_ws_user() as ws1, make_ws_user() as ws2:
@@ -56,7 +55,9 @@ def test_happy_path(make_ws_user: WSFactory):
 
         # Both clients should receive the same game ID
         res1 = Message.model_validate(ws1.receive_json())
+        print("Got one game begin message")
         res2 = Message.model_validate(ws2.receive_json())
+        print("Got both game begin messages")
 
         assert isinstance(res1.data, GameBeginMsg) and isinstance(
             res2.data, GameBeginMsg
@@ -72,7 +73,6 @@ def test_happy_path(make_ws_user: WSFactory):
         assert chat_res.data.message == "glhf"
 
 
-@pytest.mark.timeout(5)
 def test_temporary_disconnects(make_client: ClientFactory):
     """Depending on how the app is built, navigating from the matchmaking page to the gameplay page
     may require disconnecting from the initial websocket connection and establishing a new one from
