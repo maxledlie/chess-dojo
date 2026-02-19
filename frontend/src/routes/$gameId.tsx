@@ -5,7 +5,8 @@ import "./$gameId.css";
 import { useState } from "react";
 import useWebSocket from "../hooks/useWebSocket";
 import { Button } from "@base-ui/react/button";
-import { Flag, Undo, X } from "lucide-react";
+import { FileX, Flag, Undo, X } from "lucide-react";
+import { useGetGame } from "../queries/games";
 
 export const Route = createFileRoute("/$gameId")({
     component: GamePage,
@@ -19,6 +20,8 @@ interface ChatReceiveData {
 
 function GamePage() {
     const { gameId } = Route.useParams();
+    const { data: game, isPending, error } = useGetGame(gameId);
+
     const [messages, setMessages] = useState<string[]>([]);
 
     const handleMessageReceived = (ev: MessageEvent<any>) => {
@@ -35,6 +38,27 @@ function GamePage() {
     const { sendMessage } = useWebSocket({
         onMessage: handleMessageReceived,
     });
+
+    if (isPending) {
+        return <></>;
+    }
+
+    if (!game) {
+        return (
+            <div
+                style={{
+                    height: "90vh",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "center",
+                    alignItems: "center",
+                }}
+            >
+                <div>We can't find what you're looking for...</div>
+                <div style={{ fontSize: 80 }}>!?</div>
+            </div>
+        );
+    }
 
     return (
         <div className="game-layout">

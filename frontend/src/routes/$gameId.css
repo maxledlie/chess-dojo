@@ -44,3 +44,8 @@
     color: white;
     border: 1px solid white;
 }
+
+.not-found {
+    display: flex;
+    justify-content: center;
+}

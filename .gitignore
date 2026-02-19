@@ -3,5 +3,9 @@
 *.pyc
 
 
+# Auto-generated TypeScript client
+frontend/src/client/**
+
+
 # Environment secrets
 .env

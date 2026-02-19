@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "generate-client": "openapi-ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.2.0",
@@ -20,6 +21,9 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@hey-api/openapi-ts": "0.92.4",
+    "@tanstack/eslint-plugin-query": "^5.91.4",
+    "@tanstack/react-query-devtools": "^5.91.3",
     "@tanstack/router-plugin": "^1.160.0",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.7",

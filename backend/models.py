@@ -11,6 +11,19 @@ class SessionResponse(BaseModel):
     session_id: str
 
 
+class ChatMessage(BaseModel):
+    player_id: str
+    timestamp: datetime
+    content: str
+
+
+class Game(BaseModel):
+    white_id: str
+    black_id: str
+    moves: list[str]
+    chat: list[ChatMessage]
+
+
 # ------------------------
 # WEBSOCKET
 # ------------------------
