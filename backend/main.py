@@ -43,11 +43,7 @@ class ConnectionManager:
         del self._clients[session_id]
 
     async def send_to(self, session_id: str, message: Message):
-        print(f"Enqueuing message to {session_id}: {message}")
         if session_id not in self._clients:
-            print(
-                f"ERROR: Session {session_id} not found in _clients. Known sessions: {list(self._clients.keys())}"
-            )
             return
         (_, q) = self._clients[session_id]
         await q.put(message)
@@ -108,7 +104,6 @@ async def consume(state: AppState, session_id: str, msg: Message):
                     detail=f"Unexpected message type {msg.data.msg_type}",
                 )
     except Exception as e:
-        print(f"ERROR in consume for {session_id}: {e}")
         import traceback
 
         traceback.print_exc()
@@ -116,35 +111,25 @@ async def consume(state: AppState, session_id: str, msg: Message):
 
 
 async def consumer_loop(state: AppState, session_id: str, ws: WebSocket):
-    print(f"[CONSUMER] {session_id}: Starting consumer loop")
     while True:
         try:
-            print(f"[CONSUMER] {session_id}: Waiting for message...")
             data = await ws.receive_json()
-            print(f"[CONSUMER] {session_id}: Got data")
         except WebSocketDisconnect:
-            print(f"[CONSUMER] {session_id}: WebSocket disconnected")
             break
 
         try:
             msg = Message.model_validate(data)
-            print(f"Consuming FROM {session_id}: {msg}")
             await consume(state, session_id, msg)
         except ValidationError:
-            print(f"[CONSUMER] {session_id}: ValidationError")
             raise HTTPException(HTTPStatus.BAD_REQUEST)
 
 
 async def producer_loop(queue: asyncio.Queue[Message], session_id: str, ws: WebSocket):
     try:
         while True:
-            print(f"[PRODUCER] {session_id}: Waiting for message...")
             msg = await queue.get()
-            print(f"[PRODUCER] {session_id}: Got message, sending: {msg}")
             await ws.send_text(msg.model_dump_json())
-            print(f"[PRODUCER] {session_id}: Message sent")
     except Exception as e:
-        print(f"ERROR in producer_loop for {session_id}: {e}")
         import traceback
 
         traceback.print_exc()
@@ -166,24 +151,18 @@ async def ensure_session(request: Request, response: Response):
 
 @router.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
-    print("[WS_ENDPOINT] New websocket connection")
     state: AppState = ws.app.state.state
     origin = ws.headers.get("origin")
     if origin is None or origin not in ALLOWED_ORIGINS:
-        print("[WS_ENDPOINT] Invalid origin, closing")
         await ws.close(code=1008)  # Policy violation
         return
 
     session_id = get_session_id_from_ws(ws)
-    print(f"[WS_ENDPOINT] Got session_id: {session_id}")
     if not session_id:
-        print("[WS_ENDPOINT] No session_id, closing")
         await ws.close(3000)  # Unauthorized
         return
 
-    print(f"[WS_ENDPOINT] {session_id}: Connecting...")
     outgoing = await state.manager.connect(session_id, ws)
-    print(f"[WS_ENDPOINT] {session_id}: Connected, starting consumer/producer")
 
     try:
         await asyncio.gather(
@@ -191,7 +170,6 @@ async def websocket_endpoint(ws: WebSocket):
             producer_loop(outgoing, session_id, ws),
         )
     finally:
-        print(f"[WS_ENDPOINT] {session_id}: Cleaning up")
         state.manager.disconnect(session_id)
         # Remove from game requests if still waiting
         async with state.game_request_lock:
@@ -200,29 +178,16 @@ async def websocket_endpoint(ws: WebSocket):
 
 
 async def handle_game_request(state: AppState, session_id: str):
-    print(f"[GAME_REQUEST] {session_id}: Acquiring lock...")
     async with state.game_request_lock:
-        print(
-            f"[GAME_REQUEST] {session_id}: Lock acquired. Queue: {state.game_requests}"
-        )
         if len(state.game_requests) > 0:
             try:
                 host_session_id = state.game_requests.pop(0)
-                print(
-                    f"[GAME_REQUEST] {session_id}: Popped {host_session_id}, calling setup_game..."
-                )
                 await setup_game(state, host_session_id, session_id)
-                print(f"[GAME_REQUEST] {session_id}: setup_game completed")
             except IndexError:
                 # There's a chance a different player might have jumped in with that host in the meantime
-                print(f"[GAME_REQUEST] {session_id}: IndexError in setup_game")
                 raise HTTPException(500, "Unhandled concurrency error")
         else:
-            print(f"[GAME_REQUEST] {session_id}: Queue empty, appending to queue")
             state.game_requests.append(session_id)
-            print(
-                f"[GAME_REQUEST] {session_id}: Appended, queue now: {state.game_requests}"
-            )
 
 
 async def handle_game_resign(state: AppState, session_id: str, msg: GameResignMsg):
@@ -271,20 +236,16 @@ async def handle_chat_send(state: AppState, session_id: str, msg: ChatSendMsg):
 async def setup_game(state: AppState, host_session_id: str, joiner_session_id: str):
     # Randomly generate a unique identifier for the game
     game_id = generate_game_id()
-    print(f"[SETUP_GAME] {game_id}: Sending to host {host_session_id}...")
     await state.manager.send_to(
         host_session_id, Message(data=GameBeginMsg(game_id=game_id, you_are_white=True))
     )
-    print(f"[SETUP_GAME] {game_id}: Sending to joiner {joiner_session_id}...")
     await state.manager.send_to(
         joiner_session_id,
         Message(data=GameBeginMsg(game_id=game_id, you_are_white=False)),
     )
-    print(f"[SETUP_GAME] {game_id}: Both messages sent, storing game")
     state.ongoing_games[game_id] = Game(
         white_session_id=host_session_id, black_session_id=joiner_session_id
     )
-    print(f"[SETUP_GAME] {game_id}: Game stored")
 
 
 def generate_game_id(length: int = 12) -> str:
