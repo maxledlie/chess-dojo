@@ -18,6 +18,18 @@ interface ChatReceiveData {
     message: string;
 }
 
+interface GameResult {
+    winner: "black" | "white" | "draw";
+    termination:
+        | "abandonment"
+        | "resignation"
+        | "checkmate"
+        | "timeout"
+        | "stalemate"
+        | "agreement"
+        | "repetition";
+}
+
 function GamePage() {
     const { gameId } = Route.useParams();
     const { data: game, isPending } = useGetGame(gameId);
@@ -38,6 +50,9 @@ function GamePage() {
             case "chat_receive": {
                 const data: ChatReceiveData = msg;
                 setMessages((messages) => [...messages, data.message]);
+                break;
+            }
+            case "game_complete": {
             }
         }
     }, [lastMessage]);
@@ -127,11 +142,18 @@ function BoardPanel() {
     );
 }
 
-function MovesPanel() {
-    const [resignPending, setResignPending] = useState(false);
+const MovesPanel = ({}) => {
+    return (
+        <div className="move-panel">
+            <ActionButtons />
+        </div>
+    );
+};
 
-    const { gameId } = Route.useParams();
+const ActionButtons = ({}) => {
     const { sendMessage } = useWebSocket();
+    const [resignPending, setResignPending] = useState(false);
+    const { gameId } = Route.useParams();
 
     function resignFirstClick() {
         setResignPending(true);
@@ -141,53 +163,51 @@ function MovesPanel() {
     }
 
     return (
-        <div className="move-panel">
-            <div className="game-actions">
-                <Button
-                    title="Propose Takeback"
-                    onClick={() => {
+        <div className="game-actions">
+            <Button
+                title="Propose Takeback"
+                onClick={() => {
+                    sendMessage({
+                        msg_type: "game_takeback_request",
+                        game_id: gameId,
+                    });
+                }}
+            >
+                <Undo />
+            </Button>
+            <Button
+                style={{ fontSize: 24 }}
+                title="Propose Draw"
+                onClick={() => {
+                    sendMessage({ msg_type: "game_draw", game_id: gameId });
+                }}
+            >
+                ½
+            </Button>
+            <Button
+                title="Resign"
+                className={resignPending ? "resign-button-active" : ""}
+                onClick={() => {
+                    if (resignPending) {
                         sendMessage({
-                            msg_type: "game_takeback_request",
+                            msg_type: "game_resign",
                             game_id: gameId,
                         });
-                    }}
-                >
-                    <Undo />
-                </Button>
-                <Button
-                    style={{ fontSize: 24 }}
-                    title="Propose Draw"
-                    onClick={() => {
-                        sendMessage({ msg_type: "game_draw", game_id: gameId });
-                    }}
-                >
-                    ½
-                </Button>
-                <Button
-                    title="Resign"
-                    className={resignPending ? "resign-button-active" : ""}
-                    onClick={() => {
-                        if (resignPending) {
-                            sendMessage({
-                                msg_type: "game_resign",
-                                game_id: gameId,
-                            });
-                        } else {
-                            resignFirstClick();
-                        }
-                    }}
-                >
-                    <Flag />
-                </Button>
-                <Button
-                    style={{ visibility: resignPending ? "visible" : "hidden" }}
-                    title="Cancel"
-                    id="cancel-button"
-                    onClick={() => setResignPending(false)}
-                >
-                    <X />
-                </Button>
-            </div>
+                    } else {
+                        resignFirstClick();
+                    }
+                }}
+            >
+                <Flag />
+            </Button>
+            <Button
+                style={{ visibility: resignPending ? "visible" : "hidden" }}
+                title="Cancel"
+                id="cancel-button"
+                onClick={() => setResignPending(false)}
+            >
+                <X />
+            </Button>
         </div>
     );
-}
+};
