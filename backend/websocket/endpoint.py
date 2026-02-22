@@ -8,6 +8,8 @@ import string
 from dotenv import load_dotenv
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
+from structlog import get_logger
+import structlog
 
 from models import Game
 from websocket.models import (
@@ -23,6 +25,7 @@ from main import AppState
 
 
 router = APIRouter()
+logger: structlog.stdlib.BoundLogger = get_logger()
 
 load_dotenv()
 ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173")
@@ -68,6 +71,7 @@ async def websocket_endpoint(ws: WebSocket):
 async def consume(state: AppState, session_id: str, msg: Message):
     data = msg.data
     try:
+        logger.info("Received message", **data.model_dump())
         match data.msg_type:
             case "game_request":
                 await handle_game_request(state, session_id)
@@ -81,9 +85,7 @@ async def consume(state: AppState, session_id: str, msg: Message):
                     detail=f"Unexpected message type {msg.data.msg_type}",
                 )
     except Exception as e:
-        import traceback
-
-        traceback.print_exc()
+        logger.error("Unexpected error consuming message", msg=msg, exc_info=e)
         raise
 
 
@@ -98,6 +100,7 @@ async def consumer_loop(state: AppState, session_id: str, ws: WebSocket):
             msg = Message.model_validate(data)
             await consume(state, session_id, msg)
         except ValidationError:
+            logger.info("Invalid message sent to websocket", msg=data)
             raise HTTPException(HTTPStatus.BAD_REQUEST)
 
 
@@ -105,11 +108,10 @@ async def producer_loop(queue: asyncio.Queue[Message], session_id: str, ws: WebS
     try:
         while True:
             msg = await queue.get()
+            logger.info("Sending message", **msg.model_dump())
             await ws.send_text(msg.model_dump_json())
     except Exception as e:
-        import traceback
-
-        traceback.print_exc()
+        logger.error("Unexpected error sending message", exc_info=e)
         raise
 
 
