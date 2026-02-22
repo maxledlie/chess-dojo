@@ -1,6 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useWebSocket } from "../components/WebSocketProvider";
+import { Button } from "@base-ui/react/button";
+import "./index.css";
 
 export const Route = createFileRoute("/")({
     component: Index,
@@ -16,7 +18,7 @@ function Index() {
     const [isWaiting, setIsWaiting] = useState<boolean>(false);
     const navigate = useNavigate({ from: "/" });
 
-    const { sendMessage, lastMessage } = useWebSocket();
+    const { status, sendMessage, lastMessage } = useWebSocket();
 
     useEffect(() => {
         if (!lastMessage) {
@@ -35,19 +37,19 @@ function Index() {
     }, [lastMessage]);
 
     return (
-        <>
+        <div className="home-layout">
             {isWaiting ? (
                 <p>Waiting for a game...</p>
             ) : (
-                <button
+                <Button
                     onClick={() => {
                         sendMessage({ msg_type: "game_request" });
                         setIsWaiting(true);
                     }}
                 >
                     Play!
-                </button>
+                </Button>
             )}
-        </>
+        </div>
     );
 }

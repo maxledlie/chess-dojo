@@ -37,6 +37,9 @@ export default function WebSocketProvider({
     // When disconnected, we try to reconnect after some delay.
     const reconnectTimerRef = useRef<number | null>(null);
 
+    // Store messages in an in-memory queue until socket is open
+    const sendQueueRef = useRef<any[]>([]);
+
     const [status, setStatus] = useState<WSStatus>("idle");
     const [lastMessage, setLastMessage] = useState<MessageEvent | null>(null);
 
@@ -67,7 +70,15 @@ export default function WebSocketProvider({
         const ws = new WebSocket(url);
         wsRef.current = ws;
 
-        ws.onopen = () => setStatus("open");
+        ws.onopen = () => {
+            setStatus("open");
+            // Flush queued messages
+            const q = sendQueueRef.current;
+            sendQueueRef.current = [];
+            for (const msg of q) {
+                ws.send(msg);
+            }
+        }
         ws.onmessage = (evt) => setLastMessage(evt);
         ws.onerror = () => setStatus("error");
 
@@ -95,6 +106,7 @@ export default function WebSocketProvider({
             const ws = wsRef.current;
 
             if (!ws || ws.readyState !== WebSocket.OPEN) {
+                sendQueueRef.current.push(message);
                 connect();
                 return;
             }
