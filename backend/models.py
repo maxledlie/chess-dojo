@@ -1,6 +1,8 @@
-from typing import Literal, Union
-from pydantic import BaseModel, Field
+import threading
+from pydantic import BaseModel
 from datetime import datetime
+
+from websocket.manager import ConnectionManager
 
 # ------------------------
 # HTTP
@@ -24,53 +26,29 @@ class Game(BaseModel):
     chat: list[ChatMessage]
 
 
-# ------------------------
-# WEBSOCKET
-# ------------------------
+class AppState:
+    def __init__(self):
+        self.game_requests: list[str] = []
+        self.games: dict[str, Game] = {}
+        self.manager: ConnectionManager = ConnectionManager()
+        self._game_request_lock: threading.Lock = threading.Lock()
+
+    @property
+    def game_request_lock(self):
+        """Return an async context manager for the lock"""
+        return _ThreadingLockAsyncWrapper(self._game_request_lock)
 
 
-class GameRequestMsg(BaseModel):
-    msg_type: Literal["game_request"] = "game_request"
+class _ThreadingLockAsyncWrapper:
+    """Wraps a threading.Lock to be used with async with"""
 
+    def __init__(self, lock: threading.Lock):
+        self.lock = lock
 
-class GameBeginMsg(BaseModel):
-    msg_type: Literal["game_begin"] = "game_begin"
-    you_are_white: bool
-    game_id: str
+    async def __aenter__(self):
+        self.lock.acquire()
+        return self
 
-
-class GameResignMsg(BaseModel):
-    msg_type: Literal["game_resign"] = "game_resign"
-    game_id: str
-
-
-class GameCompleteMsg(BaseModel):
-    msg_type: Literal["game_complete"] = "game_complete"
-    game_id: str
-    result: Literal["white", "black", "draw"]
-
-
-class ChatSendMsg(BaseModel):
-    msg_type: Literal["chat_send"] = "chat_send"
-    game_id: str
-    message: str = Field(min_length=1, max_length=512)
-
-
-class ChatReceiveMsg(BaseModel):
-    msg_type: Literal["chat_receive"] = "chat_receive"
-    message: str
-    timestamp: datetime
-
-
-MessagePayload = Union[
-    GameRequestMsg,
-    GameBeginMsg,
-    GameResignMsg,
-    GameCompleteMsg,
-    ChatSendMsg,
-    ChatReceiveMsg,
-]
-
-
-class Message(BaseModel):
-    data: MessagePayload = Field(discriminator="msg_type")
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        self.lock.release()
+        return False
