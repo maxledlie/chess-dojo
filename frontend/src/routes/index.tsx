@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
-import useWebSocket from "../hooks/useWebSocket";
+import { useEffect, useState } from "react";
+import { useWebSocket } from "../components/WebSocketProvider";
 
 export const Route = createFileRoute("/")({
     component: Index,
@@ -16,9 +16,15 @@ function Index() {
     const [isWaiting, setIsWaiting] = useState<boolean>(false);
     const navigate = useNavigate({ from: "/" });
 
-    const handleMessageReceived = (ev: MessageEvent<any>) => {
-        console.log("Message received", ev, ev.data);
-        const msg = JSON.parse(ev.data).data;
+    const { sendMessage, lastMessage } = useWebSocket();
+
+    useEffect(() => {
+        if (!lastMessage) {
+            return;
+        }
+
+        console.log("Message received", lastMessage.data);
+        const msg = JSON.parse(lastMessage.data).data;
         switch (msg.msg_type) {
             case "game_begin": {
                 const data: GameBeginData = msg;
@@ -26,9 +32,7 @@ function Index() {
                 break;
             }
         }
-    };
-
-    const { sendMessage } = useWebSocket({ onMessage: handleMessageReceived });
+    }, [lastMessage]);
 
     return (
         <>

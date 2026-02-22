@@ -2,9 +2,10 @@ import { createRootRoute, Link, Outlet } from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 import "./root.css";
 import { useEffect } from "react";
+import WebSocketProvider from "../components/WebSocketProvider";
 
 const RootLayout = () => {
-    // Establish guest identity on page load
+    // Establish guest identity and websocket connection on page load
     useEffect(() => {
         async function init() {
             const sessionUrl = "/api/session";
@@ -41,7 +42,9 @@ const RootLayout = () => {
                     </Link>
                 </nav>
             </header>
-            <Outlet />
+            <WebSocketProvider url={"ws://localhost:8000/ws"}>
+                <Outlet />
+            </WebSocketProvider>
             <TanStackRouterDevtools />
         </>
     );

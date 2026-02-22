@@ -2,11 +2,11 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Input } from "@base-ui/react/input";
 import { Chessboard } from "react-chessboard";
 import "./$gameId.css";
-import { useState } from "react";
-import useWebSocket from "../hooks/useWebSocket";
+import { useEffect, useState } from "react";
 import { Button } from "@base-ui/react/button";
-import { FileX, Flag, Undo, X } from "lucide-react";
+import { Flag, Undo, X } from "lucide-react";
 import { useGetGame } from "../queries/games";
+import { useWebSocket } from "../components/WebSocketProvider";
 
 export const Route = createFileRoute("/$gameId")({
     component: GamePage,
@@ -20,24 +20,27 @@ interface ChatReceiveData {
 
 function GamePage() {
     const { gameId } = Route.useParams();
-    const { data: game, isPending, error } = useGetGame(gameId);
+    const { data: game, isPending } = useGetGame(gameId);
 
     const [messages, setMessages] = useState<string[]>([]);
 
-    const handleMessageReceived = (ev: MessageEvent<any>) => {
-        console.log("Message received", ev, ev.data);
-        const msg = JSON.parse(ev.data).data;
+    const { sendMessage, lastMessage } = useWebSocket();
+
+    // Handle messages
+    useEffect(() => {
+        if (!lastMessage) {
+            return;
+        }
+
+        console.log("Message received", lastMessage.data);
+        const msg = JSON.parse(lastMessage.data).data;
         switch (msg.msg_type) {
             case "chat_receive": {
                 const data: ChatReceiveData = msg;
                 setMessages((messages) => [...messages, data.message]);
             }
         }
-    };
-
-    const { sendMessage } = useWebSocket({
-        onMessage: handleMessageReceived,
-    });
+    }, [lastMessage]);
 
     if (isPending) {
         return <></>;
