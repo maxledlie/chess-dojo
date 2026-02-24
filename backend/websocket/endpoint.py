@@ -21,7 +21,7 @@ from websocket.models import (
     Message,
 )
 from guest_auth import get_session_id_from_ws
-from main import AppState
+from models import AppState
 
 
 router = APIRouter()

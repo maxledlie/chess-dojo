@@ -8,6 +8,7 @@ dependencies = [
     "fastapi[standard]>=0.129.0",
     "itsdangerous>=2.2.0",
     "structlog>=25.5.0",
+    "uvicorn[standard]>=0.40.0",
     "websockets>=16.0",
 ]
 
