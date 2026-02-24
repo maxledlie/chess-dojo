@@ -8,5 +8,6 @@
   "search.exclude": {
     "**/routeTree.gen.ts": true
   },
-  "python.analysis.extraPaths": ["./backend"]
+  "python.analysis.extraPaths": ["./backend"],
+  "python-envs.workspaceSearchPaths": ["./backend/**/.venv"]
 }
