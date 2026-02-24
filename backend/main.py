@@ -1,3 +1,6 @@
+import asyncio
+import uuid
+
 import uvicorn
 from api.app import create_app
 from matchmaking.daemon import main as daemon_main
@@ -14,9 +17,14 @@ def api_main():
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
 
+def mm_daemon_main():
+    daemon_id = f"mm-{uuid.uuid4().hex[:8]}"
+    asyncio.run(daemon_main(daemon_id))
+
+
 if __name__ == "__main__":
     api_p = Process(target=api_main, name="api")
-    mm_p = Process(target=daemon_main, name="matchmaker")
+    mm_p = Process(target=mm_daemon_main, name="matchmaker")
 
     procs = [api_p, mm_p]
     for proc in procs:
