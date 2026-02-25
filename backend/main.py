@@ -12,19 +12,20 @@ logger = structlog.get_logger()
 GRACEFUL_SHUTDOWN_TIMEOUT = 10
 
 
-def api_main():
-    app = create_app()
+def run_api_process():
+    api_instance_id = f"mm-{uuid.uuid4().hex[:8]}"
+    app = create_app(api_instance_id)
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
 
-def mm_daemon_main():
+def run_daemon_process():
     daemon_id = f"mm-{uuid.uuid4().hex[:8]}"
     asyncio.run(daemon_main(daemon_id))
 
 
 if __name__ == "__main__":
-    api_p = Process(target=api_main, name="api")
-    mm_p = Process(target=mm_daemon_main, name="matchmaker")
+    api_p = Process(target=run_api_process, name="api")
+    mm_p = Process(target=run_daemon_process, name="matchmaker")
 
     procs = [api_p, mm_p]
     for proc in procs:

@@ -1,6 +1,7 @@
 import threading
 from pydantic import BaseModel
 from datetime import datetime
+import redis.asyncio as redis
 
 from websocket.manager import ConnectionManager
 
@@ -27,10 +28,11 @@ class Game(BaseModel):
 
 
 class AppState:
-    def __init__(self):
+    def __init__(self, redis: redis.Redis):
         self.game_requests: list[str] = []
         self.games: dict[str, Game] = {}
         self.manager: ConnectionManager = ConnectionManager()
+        self.redis = redis
         self._game_request_lock: threading.Lock = threading.Lock()
 
     @property

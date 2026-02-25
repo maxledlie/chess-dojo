@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import (
     APIRouter,
     FastAPI,
@@ -13,6 +15,7 @@ from models import (
 )
 from http import HTTPStatus
 from guest_auth import ensure_guest_session
+from shared.redis import redis_client
 from websocket.endpoint import router as ws_router
 import structlog
 import logging
@@ -58,9 +61,16 @@ async def get_game(req: Request, game_id: str) -> Game:
     return game
 
 
-def create_app() -> FastAPI:
-    app = FastAPI()
-    app.state.state = AppState()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Establish redis connection
+    async with redis_client() as rc:
+        app.state.state = AppState(redis=rc)
+        yield
+
+
+def create_app(api_instance_id: str) -> FastAPI:
+    app = FastAPI(lifespan=lifespan)
     app.include_router(router)
     app.include_router(ws_router)
 

@@ -1,9 +1,9 @@
 import asyncio
 from datetime import UTC, datetime
 from http import HTTPStatus
+from json import JSONDecodeError
 import os
-import secrets
-import string
+import redis.asyncio as redis
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
@@ -11,12 +11,13 @@ from pydantic import ValidationError
 from structlog import get_logger
 import structlog
 
-from models import Game
+from shared.redis import MM_REQUESTS_STREAM
+from shared.utils import now_ms
 from websocket.models import (
     ChatReceiveMsg,
     ChatSendMsg,
-    GameBeginMsg,
     GameCompleteMsg,
+    GameRequestMsg,
     GameResignMsg,
     Message,
 )
@@ -74,7 +75,7 @@ async def consume(state: AppState, session_id: str, msg: Message):
         logger.info("Received message", **data.model_dump())
         match data.msg_type:
             case "game_request":
-                await handle_game_request(state, session_id)
+                await handle_game_request(state, session_id, data)
             case "game_resign":
                 await handle_game_resign(state, session_id, data)
             case "chat_send":
@@ -93,6 +94,11 @@ async def consumer_loop(state: AppState, session_id: str, ws: WebSocket):
     while True:
         try:
             data = await ws.receive_json()
+        except JSONDecodeError as e:
+            logger.error(
+                "Received invalid JSON through websocket", exc_info=e, msg=e.msg
+            )
+            break
         except WebSocketDisconnect:
             break
 
@@ -115,17 +121,24 @@ async def producer_loop(queue: asyncio.Queue[Message], session_id: str, ws: WebS
         raise
 
 
-async def handle_game_request(state: AppState, session_id: str):
+async def handle_game_request(state: AppState, session_id: str, msg: GameRequestMsg):
+    rc: redis.Redis = state.redis
+
+    # TODO: Look up player's rating from database
+    rating = 1000
+
     async with state.game_request_lock:
-        if len(state.game_requests) > 0:
-            try:
-                host_session_id = state.game_requests.pop(0)
-                await setup_game(state, host_session_id, session_id)
-            except IndexError:
-                # There's a chance a different player might have jumped in with that host in the meantime
-                raise HTTPException(500, "Unhandled concurrency error")
-        else:
-            state.game_requests.append(session_id)
+        await rc.xadd(
+            MM_REQUESTS_STREAM,
+            fields={
+                "session_id": session_id,
+                "rating": rating,
+                "time_control": msg.time_control,
+                "created_ms": str(now_ms()),
+            },
+            maxlen=10_000,
+            approximate=True,
+        )
 
 
 async def handle_game_resign(state: AppState, session_id: str, msg: GameResignMsg):
@@ -169,23 +182,3 @@ async def handle_chat_send(state: AppState, session_id: str, msg: ChatSendMsg):
         data=ChatReceiveMsg(timestamp=timestamp, message=msg.message)
     )
     await state.manager.send_to(receiver_session_id, outgoing_msg)
-
-
-async def setup_game(state: AppState, host_session_id: str, joiner_session_id: str):
-    # Randomly generate a unique identifier for the game
-    game_id = generate_game_id()
-    await state.manager.send_to(
-        host_session_id, Message(data=GameBeginMsg(game_id=game_id, you_are_white=True))
-    )
-    await state.manager.send_to(
-        joiner_session_id,
-        Message(data=GameBeginMsg(game_id=game_id, you_are_white=False)),
-    )
-    state.games[game_id] = Game(
-        white_id=host_session_id, black_id=joiner_session_id, moves=[], chat=[]
-    )
-
-
-def generate_game_id(length: int = 12) -> str:
-    alphabet = string.ascii_letters + string.digits
-    return "".join(secrets.choice(alphabet) for _ in range(12))

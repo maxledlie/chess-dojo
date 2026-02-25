@@ -1,23 +1,21 @@
 import asyncio
 import secrets
 import string
-import time
 
 import structlog
-from shared.redis import ensure_group, redis_client
-from dataclasses import dataclass
+from shared.redis import (
+    MM_MATCHES_STREAM,
+    MM_REQUESTS_GROUP,
+    MM_REQUESTS_STREAM,
+    redis_client,
+)
+from dataclasses import dataclass, asdict
+
+from shared.utils import now_ms
 
 
 logger = structlog.get_logger()
 
-
-# Redis event streams
-MM_REQUESTS_STREAM = "mm:requests"
-MM_MATCHES_STREAM = "mm:matches"
-
-# Redis consumer groups
-MM_REQUESTS_GROUP = "mm-requests-daemons"
-MM_MATCHES_GROUP = "mm-matches-apis"
 
 # Number of matchmaking requests to read at once
 MM_BATCH_SIZE = 50
@@ -45,14 +43,9 @@ class Match:
     time_control: str
 
 
-def now_ms():
-    return int(time.time() * 1000)
-
-
 async def _amain(daemon_id: str):
     async with redis_client() as rc:
-        await ensure_group(rc, MM_REQUESTS_STREAM, MM_REQUESTS_GROUP)
-        await ensure_group(rc, MM_MATCHES_STREAM, MM_MATCHES_GROUP)
+        # Clear pending entries list on startup
 
         # In memory queue for waiting players per time control
         waiting: dict[str, list[MMRequest]] = {}
@@ -62,7 +55,7 @@ async def _amain(daemon_id: str):
                 resp = await rc.xreadgroup(
                     groupname=MM_REQUESTS_GROUP,
                     consumername=daemon_id,
-                    streams={MM_MATCHES_STREAM: ">"},
+                    streams={MM_REQUESTS_STREAM: ">"},
                     count=MM_BATCH_SIZE,
                     block=MM_WAIT_TIME,
                 )
@@ -79,6 +72,7 @@ async def _amain(daemon_id: str):
                             time_control=fields.get("time_control", "blitz_5p0"),
                             created_ts=int(fields.get("ts", str(now_ms()))),
                         )
+                        logger.info("Consuming matchmaking request", **asdict(req))
 
                         # Add to waiting pool
                         pool = waiting.setdefault(req.time_control, [])
@@ -89,6 +83,11 @@ async def _amain(daemon_id: str):
                         # Persist "match found" events and acknowledge the requests so other
                         # running daemons won't try to pair them.
                         for match in matches:
+                            logger.info(
+                                "Created match",
+                                session_a=match.session_a,
+                                session_b=match.session_b,
+                            )
                             await rc.xadd(
                                 MM_MATCHES_STREAM,
                                 fields={
@@ -103,6 +102,9 @@ async def _amain(daemon_id: str):
                             )
 
                             for msg_id in [match.msg_id_a, match.msg_id_b]:
+                                logger.debug(
+                                    "Sending ack for game request", msg_id=msg_id
+                                )
                                 await rc.xack(
                                     MM_REQUESTS_STREAM, MM_REQUESTS_GROUP, msg_id
                                 )
@@ -110,11 +112,6 @@ async def _amain(daemon_id: str):
             except asyncio.CancelledError:
                 logger.info("Matchmaking daemon task cancelled")
                 raise
-
-            except Exception as e:
-                # Log unexpected errors and attempt to keep the daemon running
-                logger.error("Unexpected error in matchmaking daemon", exc_info=e)
-                await asyncio.sleep(0.5)
 
 
 def find_matches(pool: list[MMRequest]) -> list[Match]:
@@ -131,7 +128,7 @@ def find_matches(pool: list[MMRequest]) -> list[Match]:
     # This may require moving waiting players into a separate redis ZSET so we can
     # efficiently search based on rating ranges.
 
-    if len(pool) > 2:
+    if len(pool) >= 2:
         a = pool.pop()
         b = pool.pop()
 
@@ -158,6 +155,7 @@ def generate_game_id(length: int = 12) -> str:
 
 async def main(daemon_id: str):
     try:
+        logger.bind(daemon_id=daemon_id)
         await _amain(daemon_id)
     except Exception as e:
         logger.error("Unhandled exception", exc_info=e)

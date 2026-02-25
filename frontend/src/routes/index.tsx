@@ -43,7 +43,11 @@ function Index() {
             ) : (
                 <Button
                     onClick={() => {
-                        sendMessage({ msg_type: "game_request" });
+                        // TODO: Time control selection
+                        sendMessage({
+                            msg_type: "game_request",
+                            time_control: "blitz_5p0",
+                        });
                         setIsWaiting(true);
                     }}
                 >

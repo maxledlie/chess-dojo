@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 class GameRequestMsg(BaseModel):
     msg_type: Literal["game_request"] = "game_request"
+    time_control: str  # TODO: Validation
 
 
 class GameBeginMsg(BaseModel):
