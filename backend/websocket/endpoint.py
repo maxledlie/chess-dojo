@@ -3,10 +3,17 @@ from datetime import UTC, datetime
 from http import HTTPStatus
 from json import JSONDecodeError
 import os
+import uuid
 import redis.asyncio as redis
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+    WebSocketException,
+)
 from pydantic import ValidationError
 from structlog import get_logger
 import structlog
@@ -121,24 +128,82 @@ async def producer_loop(queue: asyncio.Queue[Message], session_id: str, ws: WebS
         raise
 
 
+# -----------------------------
+# Waiting-queue schema helpers
+# -----------------------------
+
+
+def waiting_zset_key(time_control: str) -> str:
+    return f"mm:wait:{time_control}"
+
+
+def request_hash_key(time_control: str, session_id: str) -> str:
+    return f"mm:req:{time_control}:{session_id}"
+
+
+def queued_key(session_id: str) -> str:
+    return f"mm:queued:{session_id}"
+
+
 async def handle_game_request(state: AppState, session_id: str, msg: GameRequestMsg):
+    """
+    Authoritatively enqueue game request.
+        - dedupe via mm:queued:{user_id} NX
+        - store request details in hash
+        - add to ZSET
+        - emit to game requests stream to wake up matchmaking daemon
+    """
+
     rc: redis.Redis = state.redis
+
+    request_id = uuid.uuid4().hex
+    enqueued_ms = now_ms()
+    ttl_s = int(os.environ["GAME_REQUEST_TTL_SECONDS"])
+
+    # If player already queued, return that fact (up to client what to do)
+    ok = await rc.set(queued_key(session_id), request_id, nx=True, ex=ttl_s)
+    if not ok:
+        raise WebSocketException(
+            code=1008, reason="Game already requested for this session ID"
+        )
 
     # TODO: Look up player's rating from database
     rating = 1000
 
-    async with state.game_request_lock:
-        await rc.xadd(
-            MM_REQUESTS_STREAM,
-            fields={
-                "session_id": session_id,
-                "rating": rating,
-                "time_control": msg.time_control,
-                "created_ms": str(now_ms()),
-            },
-            maxlen=10_000,
-            approximate=True,
-        )
+    # Store details and enqueue
+    pipe = rc.pipeline()
+    pipe.hset(
+        request_hash_key(msg.time_control, session_id),
+        mapping={
+            "request_id": request_id,
+            "session_id": session_id,
+            "rating": str(rating),
+            "time_control": msg.time_control,
+            "enqueued_ms": str(enqueued_ms),
+        },
+    )
+
+    # Keep hash roughly aligned with queued TTL so it doesn't leak
+    pipe.expire(request_hash_key(msg.time_control, session_id), ttl_s)
+
+    # Add game request to sorted set, using time of game request as the score
+    pipe.zadd(waiting_zset_key(msg.time_control), {session_id: enqueued_ms})
+
+    # Add game request to event stream to wake up daemon. Also useful for debugging.
+    pipe.xadd(
+        MM_REQUESTS_STREAM,
+        fields={
+            "type": "join",
+            "session_id": session_id,
+            "rating": str(rating),
+            "time_control": msg.time_control,
+            "request_id": request_id,
+            "created_ms": str(now_ms()),
+        },
+        maxlen=10_000,
+        approximate=True,
+    )
+    await pipe.execute()
 
 
 async def handle_game_resign(state: AppState, session_id: str, msg: GameResignMsg):

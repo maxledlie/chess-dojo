@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import (
@@ -15,6 +16,7 @@ from models import (
 )
 from http import HTTPStatus
 from guest_auth import ensure_guest_session
+from matchmaking.consumer import matches_consumer
 from shared.redis import redis_client
 from websocket.endpoint import router as ws_router
 import structlog
@@ -61,15 +63,20 @@ async def get_game(req: Request, game_id: str) -> Game:
     return game
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Establish redis connection
-    async with redis_client() as rc:
-        app.state.state = AppState(redis=rc)
-        yield
-
-
 def create_app(api_instance_id: str) -> FastAPI:
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        async with redis_client() as rc:
+            app.state.state = AppState(redis=rc)
+            task = asyncio.create_task(
+                matches_consumer(app.state.state, api_instance_id)
+            )
+            try:
+                yield
+            finally:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
     app = FastAPI(lifespan=lifespan)
     app.include_router(router)
     app.include_router(ws_router)
