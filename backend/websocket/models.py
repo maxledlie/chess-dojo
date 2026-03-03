@@ -38,6 +38,20 @@ class ChatReceiveMsg(BaseModel):
     timestamp: datetime
 
 
+class MoveSendMsg(BaseModel):
+    msg_type: Literal["move_send"] = "move_send"
+    game_id: str
+    move: str  # SAN string, e.g. "e4", "Nf3", "O-O"
+
+
+class MoveResultMsg(BaseModel):
+    msg_type: Literal["move_result"] = "move_result"
+    game_id: str
+    accepted: bool
+    move: str | None = None    # canonical SAN if accepted
+    reason: str | None = None  # rejection reason if not accepted
+
+
 MessagePayload = Union[
     GameRequestMsg,
     GameBeginMsg,
@@ -45,6 +59,8 @@ MessagePayload = Union[
     GameCompleteMsg,
     ChatSendMsg,
     ChatReceiveMsg,
+    MoveSendMsg,
+    MoveResultMsg,
 ]
 
 

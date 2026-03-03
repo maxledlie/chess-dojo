@@ -1,4 +1,5 @@
 import asyncio
+import chess as pychess
 from datetime import UTC, datetime
 from http import HTTPStatus
 from json import JSONDecodeError
@@ -27,6 +28,8 @@ from websocket.models import (
     GameRequestMsg,
     GameResignMsg,
     Message,
+    MoveResultMsg,
+    MoveSendMsg,
 )
 from guest_auth import get_session_id_from_ws
 from models import AppState
@@ -87,6 +90,8 @@ async def consume(state: AppState, session_id: str, msg: Message):
                 await handle_game_resign(state, session_id, data)
             case "chat_send":
                 await handle_chat_send(state, session_id, data)
+            case "move_send":
+                await handle_move(state, session_id, data)
             case _:
                 raise HTTPException(
                     HTTPStatus.BAD_REQUEST,
@@ -247,3 +252,50 @@ async def handle_chat_send(state: AppState, session_id: str, msg: ChatSendMsg):
         data=ChatReceiveMsg(timestamp=timestamp, message=msg.message)
     )
     await state.manager.send_to(receiver_session_id, outgoing_msg)
+
+
+def _validate_move(
+    moves: list[str], move_san: str, is_white: bool
+) -> tuple[bool, str | None, str | None]:
+    board = pychess.Board()
+    for m in moves:
+        board.push_san(m)
+
+    if (board.turn == pychess.WHITE) != is_white:
+        return False, None, "Not your turn"
+
+    try:
+        move = board.parse_san(move_san)
+        san = board.san(move)  # normalise to canonical SAN
+        return True, san, None
+    except (
+        ValueError,
+        pychess.InvalidMoveError,
+        pychess.IllegalMoveError,
+        pychess.AmbiguousMoveError,
+    ):
+        return False, None, "Illegal move"
+
+
+async def handle_move(state: AppState, session_id: str, msg: MoveSendMsg):
+    game = state.games.get(msg.game_id)
+    if game is None:
+        return
+
+    if session_id not in (game.white_id, game.black_id):
+        return
+
+    is_white = session_id == game.white_id
+    accepted, san, reason = _validate_move(game.moves, msg.move, is_white)
+
+    if accepted:
+        game.moves.append(san)
+        opponent_id = game.black_id if is_white else game.white_id
+        result = Message(data=MoveResultMsg(game_id=msg.game_id, accepted=True, move=san))
+        await state.manager.send_to(session_id, result)
+        await state.manager.send_to(opponent_id, result)
+    else:
+        await state.manager.send_to(
+            session_id,
+            Message(data=MoveResultMsg(game_id=msg.game_id, accepted=False, reason=reason)),
+        )

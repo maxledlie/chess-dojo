@@ -18,19 +18,22 @@ function Index() {
     const [isWaiting, setIsWaiting] = useState<boolean>(false);
     const navigate = useNavigate({ from: "/" });
 
-    const { status, sendMessage, lastMessage } = useWebSocket();
+    const { sendMessage, lastMessage } = useWebSocket();
 
     useEffect(() => {
         if (!lastMessage) {
             return;
         }
 
-        console.log("Message received", lastMessage.data);
         const msg = JSON.parse(lastMessage.data).data;
         switch (msg.msg_type) {
             case "game_begin": {
                 const data: GameBeginData = msg;
-                navigate({ to: "/$gameId", params: { gameId: data.game_id } });
+                navigate({
+                    to: "/$gameId",
+                    params: { gameId: data.game_id },
+                    search: { color: data.you_are_white ? "white" : "black" },
+                });
                 break;
             }
         }

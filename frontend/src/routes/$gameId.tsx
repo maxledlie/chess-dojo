@@ -1,14 +1,19 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Input } from "@base-ui/react/input";
 import { Chessboard } from "react-chessboard";
+import type { PieceDropHandlerArgs } from "react-chessboard";
 import "./$gameId.css";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@base-ui/react/button";
 import { Flag, Undo, X } from "lucide-react";
 import { useGetGame } from "../queries/games";
 import { useWebSocket } from "../components/WebSocketProvider";
+import { Chess } from "chess.js";
 
 export const Route = createFileRoute("/$gameId")({
+    validateSearch: (s: Record<string, unknown>) => ({
+        color: (s.color as "white" | "black") ?? "white",
+    }),
     component: GamePage,
 });
 
@@ -18,23 +23,25 @@ interface ChatReceiveData {
     message: string;
 }
 
-interface GameResult {
-    winner: "black" | "white" | "draw";
-    termination:
-        | "abandonment"
-        | "resignation"
-        | "checkmate"
-        | "timeout"
-        | "stalemate"
-        | "agreement"
-        | "repetition";
+interface MoveResultData {
+    msg_type: "move_result";
+    game_id: string;
+    accepted: boolean;
+    move?: string;
+    reason?: string;
 }
 
 function GamePage() {
     const { gameId } = Route.useParams();
+    const { color } = Route.useSearch();
     const { data: game, isPending } = useGetGame(gameId);
 
     const [messages, setMessages] = useState<string[]>([]);
+
+    const chessRef = useRef(new Chess());
+    const [fen, setFen] = useState(chessRef.current.fen());
+    // Tracks the SAN of a move we sent and are awaiting confirmation for.
+    const pendingMoveRef = useRef<string | null>(null);
 
     const { sendMessage, lastMessage } = useWebSocket();
 
@@ -53,9 +60,46 @@ function GamePage() {
                 break;
             }
             case "game_complete": {
+                break;
+            }
+            case "move_result": {
+                const data: MoveResultData = msg;
+                if (data.accepted && data.move) {
+                    if (pendingMoveRef.current !== null) {
+                        // Our own move was accepted — already applied optimistically, nothing to do.
+                        pendingMoveRef.current = null;
+                    } else {
+                        // Opponent's move — apply it now.
+                        try { chessRef.current.move(data.move); } catch {}
+                        setFen(chessRef.current.fen());
+                    }
+                } else if (!data.accepted) {
+                    // Our move was rejected — revert the optimistic update.
+                    pendingMoveRef.current = null;
+                    chessRef.current.undo();
+                    setFen(chessRef.current.fen());
+                }
+                break;
             }
         }
     }, [lastMessage]);
+
+    function handleDrop({ sourceSquare, targetSquare }: PieceDropHandlerArgs): boolean {
+        if (!targetSquare) return false;
+        const chess = chessRef.current;
+        let result;
+        try {
+            result = chess.move({ from: sourceSquare, to: targetSquare, promotion: "q" });
+        } catch {
+            return false;  // illegal locally — snap back
+        }
+        if (!result) return false;
+
+        pendingMoveRef.current = result.san;
+        setFen(chess.fen());
+        sendMessage({ msg_type: "move_send", game_id: gameId, move: result.san });
+        return true;
+    }
 
     if (isPending) {
         return <></>;
@@ -91,7 +135,7 @@ function GamePage() {
                     setMessages((messages) => [...messages, m]);
                 }}
             />
-            <BoardPanel />
+            <BoardPanel fen={fen} color={color} onDrop={handleDrop} />
             <MovesPanel />
         </div>
     );
@@ -134,10 +178,21 @@ function ChatPanel({ messages, sendMessage }: ChatPanelProps) {
     );
 }
 
-function BoardPanel() {
+interface BoardPanelProps {
+    fen: string;
+    color: "white" | "black";
+    onDrop: (args: PieceDropHandlerArgs) => boolean;
+}
+function BoardPanel({ fen, color, onDrop }: BoardPanelProps) {
     return (
         <div className="board-panel">
-            <Chessboard />
+            <Chessboard
+                options={{
+                    position: fen,
+                    boardOrientation: color,
+                    onPieceDrop: onDrop,
+                }}
+            />
         </div>
     );
 }
