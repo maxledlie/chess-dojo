@@ -3,7 +3,8 @@ import asyncio
 import redis.asyncio as redis
 import structlog
 
-from models import AppState, Game
+from models import AppState
+from shared.game_store import create_game
 from shared.redis import MM_MATCHES_GROUP, MM_MATCHES_STREAM
 from websocket.models import GameBeginMsg, Message
 
@@ -49,12 +50,12 @@ async def matches_consumer(state: AppState, consumer_id: str):
 
 
 async def _handle_match(state: AppState, fields: dict):
+    rc: redis.Redis = state.redis
     session_a = fields["session_a"]
     session_b = fields["session_b"]
     game_id = fields["game_id"]
 
-    game = Game(white_id=session_a, black_id=session_b, moves=[], chat=[])
-    state.games[game_id] = game
+    await create_game(rc, game_id, white_id=session_a, black_id=session_b)
 
     await state.manager.send_to(
         session_a,

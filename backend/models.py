@@ -1,9 +1,9 @@
-import threading
 from pydantic import BaseModel
 from datetime import datetime
 import redis.asyncio as redis
 
 from websocket.manager import ConnectionManager
+
 
 # ------------------------
 # HTTP
@@ -29,28 +29,5 @@ class Game(BaseModel):
 
 class AppState:
     def __init__(self, redis: redis.Redis):
-        self.game_requests: list[str] = []
-        self.games: dict[str, Game] = {}
         self.manager: ConnectionManager = ConnectionManager()
         self.redis = redis
-        self._game_request_lock: threading.Lock = threading.Lock()
-
-    @property
-    def game_request_lock(self):
-        """Return an async context manager for the lock"""
-        return _ThreadingLockAsyncWrapper(self._game_request_lock)
-
-
-class _ThreadingLockAsyncWrapper:
-    """Wraps a threading.Lock to be used with async with"""
-
-    def __init__(self, lock: threading.Lock):
-        self.lock = lock
-
-    async def __aenter__(self):
-        self.lock.acquire()
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        self.lock.release()
-        return False

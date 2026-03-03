@@ -42,8 +42,25 @@ function GamePage() {
     const [fen, setFen] = useState(chessRef.current.fen());
     // Tracks the SAN of a move we sent and are awaiting confirmation for.
     const pendingMoveRef = useRef<string | null>(null);
+    // Ensures we initialise from the server snapshot only once.
+    const initializedRef = useRef(false);
 
     const { sendMessage, lastMessage } = useWebSocket();
+
+    // Initialise board and chat from the server snapshot on first load.
+    useEffect(() => {
+        if (initializedRef.current || !game) return;
+        initializedRef.current = true;
+
+        const chess = new Chess();
+        for (const san of game.moves) {
+            try { chess.move(san); } catch {}
+        }
+        chessRef.current = chess;
+        setFen(chess.fen());
+
+        setMessages(game.chat.map((c) => c.content));
+    }, [game]);
 
     // Handle messages
     useEffect(() => {

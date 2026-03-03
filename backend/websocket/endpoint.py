@@ -19,6 +19,7 @@ from pydantic import ValidationError
 from structlog import get_logger
 import structlog
 
+from shared.game_store import append_chat, append_move, delete_game, get_game
 from shared.redis import MM_REQUESTS_STREAM
 from shared.utils import now_ms
 from websocket.models import (
@@ -32,7 +33,7 @@ from websocket.models import (
     MoveSendMsg,
 )
 from guest_auth import get_session_id_from_ws
-from models import AppState
+from models import AppState, ChatMessage
 
 
 router = APIRouter()
@@ -73,10 +74,6 @@ async def websocket_endpoint(ws: WebSocket):
         )
     finally:
         state.manager.disconnect(session_id)
-        # Remove from game requests if still waiting
-        async with state.game_request_lock:
-            if session_id in state.game_requests:
-                state.game_requests.remove(session_id)
 
 
 async def consume(state: AppState, session_id: str, msg: Message):
@@ -213,30 +210,29 @@ async def handle_game_request(state: AppState, session_id: str, msg: GameRequest
 
 async def handle_game_resign(state: AppState, session_id: str, msg: GameResignMsg):
     # Broadcast the result to both players
-    game = state.games.get(msg.game_id)
+    game = await get_game(state.redis, msg.game_id)
     if game is None:
         return
 
     if session_id not in [game.white_id, game.black_id]:
-        # TODO: Logging
         return
 
     result = "white" if session_id == game.black_id else "black"
 
     completion_msg = GameCompleteMsg(game_id=msg.game_id, result=result)
-    for session_id in [game.white_id, game.black_id]:
-        await state.manager.send_to(session_id, Message(data=completion_msg))
+    for sid in [game.white_id, game.black_id]:
+        await state.manager.send_to(sid, Message(data=completion_msg))
 
     # TODO: Don't delete the game record until completion acknowledged by both parties.
     # (And require similar acknowledgement in other cases)
-    del state.games[msg.game_id]
+    await delete_game(state.redis, msg.game_id)
 
 
 async def handle_chat_send(state: AppState, session_id: str, msg: ChatSendMsg):
     timestamp = datetime.now(UTC)
     # Eventual TODO: Chat content filtering
 
-    game = state.games.get(msg.game_id, None)
+    game = await get_game(state.redis, msg.game_id)
     if game is None:
         return
 
@@ -248,6 +244,11 @@ async def handle_chat_send(state: AppState, session_id: str, msg: ChatSendMsg):
         # Someone tried to send a message to a game they're not playing in
         return
 
+    await append_chat(
+        state.redis,
+        msg.game_id,
+        ChatMessage(player_id=session_id, timestamp=timestamp, content=msg.message),
+    )
     outgoing_msg = Message(
         data=ChatReceiveMsg(timestamp=timestamp, message=msg.message)
     )
@@ -278,7 +279,7 @@ def _validate_move(
 
 
 async def handle_move(state: AppState, session_id: str, msg: MoveSendMsg):
-    game = state.games.get(msg.game_id)
+    game = await get_game(state.redis, msg.game_id)
     if game is None:
         return
 
@@ -288,14 +289,18 @@ async def handle_move(state: AppState, session_id: str, msg: MoveSendMsg):
     is_white = session_id == game.white_id
     accepted, san, reason = _validate_move(game.moves, msg.move, is_white)
 
-    if accepted:
-        game.moves.append(san)
+    if accepted and san:
+        await append_move(state.redis, msg.game_id, san)
         opponent_id = game.black_id if is_white else game.white_id
-        result = Message(data=MoveResultMsg(game_id=msg.game_id, accepted=True, move=san))
+        result = Message(
+            data=MoveResultMsg(game_id=msg.game_id, accepted=True, move=san)
+        )
         await state.manager.send_to(session_id, result)
         await state.manager.send_to(opponent_id, result)
     else:
         await state.manager.send_to(
             session_id,
-            Message(data=MoveResultMsg(game_id=msg.game_id, accepted=False, reason=reason)),
+            Message(
+                data=MoveResultMsg(game_id=msg.game_id, accepted=False, reason=reason)
+            ),
         )

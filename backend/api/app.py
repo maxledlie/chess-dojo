@@ -14,6 +14,7 @@ from models import (
     Game,
     SessionResponse,
 )
+from shared.game_store import get_game as get_game_from_store
 from http import HTTPStatus
 from guest_auth import ensure_guest_session
 from matchmaking.consumer import matches_consumer
@@ -54,7 +55,7 @@ async def ensure_session(request: Request, response: Response):
 @router.get("/{game_id}", operation_id="get_game")
 async def get_game(req: Request, game_id: str) -> Game:
     state: AppState = req.app.state.state
-    game = state.games.get(game_id, None)
+    game = await get_game_from_store(state.redis, game_id)
     if game is None:
         raise HTTPException(
             HTTPStatus.NOT_FOUND, detail=f"No game found with id {game_id}"
