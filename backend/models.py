@@ -1,13 +1,6 @@
+from typing import Literal
 from pydantic import BaseModel
 from datetime import datetime
-import redis.asyncio as redis
-
-from websocket.manager import ConnectionManager
-
-
-# ------------------------
-# HTTP
-# ------------------------
 
 
 class SessionResponse(BaseModel):
@@ -20,14 +13,28 @@ class ChatMessage(BaseModel):
     content: str
 
 
+GameResult = Literal["white", "black", "draw"]
+
+GameTermination = Literal[
+    # One side wins
+    "checkmate",
+    "resignation",
+    "timeout",
+    "abandonment",
+    # Draw
+    "stalemate",
+    "repetition",
+    "fifty_move",
+    "agreement",
+    "insufficient_material",
+]
+
+
 class Game(BaseModel):
     white_id: str
     black_id: str
-    moves: list[str]
-    chat: list[ChatMessage]
-
-
-class AppState:
-    def __init__(self, redis: redis.Redis):
-        self.manager: ConnectionManager = ConnectionManager()
-        self.redis = redis
+    moves: list[str] = []
+    chat: list[ChatMessage] = []
+    status: Literal["active", "complete"] = "active"
+    result: GameResult | None = None
+    termination: GameTermination | None = None

@@ -9,12 +9,9 @@ from fastapi import (
     Response,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from models import (
-    AppState,
-    Game,
-    SessionResponse,
-)
-from shared.game_store import get_game as get_game_from_store
+from app_state import AppState
+from models import Game, SessionResponse
+from shared.game_store import RedisGameStore
 from http import HTTPStatus
 from guest_auth import ensure_guest_session
 from matchmaking.consumer import matches_consumer
@@ -55,7 +52,7 @@ async def ensure_session(request: Request, response: Response):
 @router.get("/{game_id}", operation_id="get_game")
 async def get_game(req: Request, game_id: str) -> Game:
     state: AppState = req.app.state.state
-    game = await get_game_from_store(state.redis, game_id)
+    game = await state.game_store.get_game(game_id)
     if game is None:
         raise HTTPException(
             HTTPStatus.NOT_FOUND, detail=f"No game found with id {game_id}"
@@ -68,7 +65,7 @@ def create_app(api_instance_id: str) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         async with redis_client() as rc:
-            app.state.state = AppState(redis=rc)
+            app.state.state = AppState(redis=rc, game_store=RedisGameStore(rc))
             task = asyncio.create_task(
                 matches_consumer(app.state.state, api_instance_id)
             )
