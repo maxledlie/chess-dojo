@@ -36,3 +36,131 @@ nav {
     line-height: 1;
     transform: translateY(-4px);
 }
+
+/* App body: main content + debug panel */
+.app-body {
+    display: flex;
+    height: calc(100vh - var(--topbar-h));
+}
+
+.app-main {
+    flex: 1;
+    overflow: auto;
+    container-type: inline-size;
+}
+
+/* Debug panel */
+.debug-panel {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    background: #1e1e1e;
+    color: #d4d4d4;
+    font-family: monospace;
+    font-size: 12px;
+    overflow: hidden;
+}
+
+.debug-panel--open {
+    width: 380px;
+}
+
+.debug-panel--closed {
+    width: 28px;
+    align-items: center;
+    justify-content: flex-start;
+    padding-top: 8px;
+}
+
+.debug-panel__toggle {
+    background: none;
+    border: 1px solid #555;
+    color: #aaa;
+    font-family: monospace;
+    font-size: 10px;
+    cursor: pointer;
+    padding: 4px 3px;
+    border-radius: 3px;
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    letter-spacing: 1px;
+}
+
+.debug-panel__toggle:hover {
+    color: #fff;
+    border-color: #888;
+}
+
+.debug-panel__header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-bottom: 1px solid #333;
+    flex-shrink: 0;
+}
+
+.debug-panel__title {
+    font-weight: bold;
+    color: #fff;
+}
+
+.debug-panel__count {
+    color: #888;
+    flex: 1;
+}
+
+.debug-panel__close {
+    background: none;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0 2px;
+    line-height: 1;
+}
+
+.debug-panel__close:hover {
+    color: #fff;
+}
+
+.debug-panel__list {
+    overflow-y: auto;
+    flex: 1;
+}
+
+.debug-panel__empty {
+    padding: 12px;
+    color: #666;
+    font-style: italic;
+}
+
+.debug-panel__entry {
+    padding: 6px 10px;
+    border-bottom: 1px solid #2a2a2a;
+}
+
+.debug-panel__entry--sent .debug-panel__arrow {
+    color: #569cd6;
+}
+
+.debug-panel__entry--received .debug-panel__arrow {
+    color: #4ec9b0;
+}
+
+.debug-panel__arrow {
+    margin-right: 6px;
+}
+
+.debug-panel__time {
+    color: #888;
+    margin-right: 8px;
+}
+
+.debug-panel__raw {
+    margin: 4px 0 0 0;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: #ce9178;
+    font-size: 11px;
+}

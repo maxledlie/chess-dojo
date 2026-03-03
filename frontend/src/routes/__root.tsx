@@ -1,8 +1,9 @@
 import { createRootRoute, Link, Outlet } from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 import "./root.css";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import WebSocketProvider from "../components/WebSocketProvider";
+import DebugPanel from "../components/DebugPanel";
 
 const RootLayout = () => {
     // Establish guest identity and websocket connection on page load
@@ -14,6 +15,8 @@ const RootLayout = () => {
         }
         init();
     }, []);
+
+    const [isDebugOpen, setIsDebugOpen] = useState(false);
 
     return (
         <>
@@ -43,7 +46,12 @@ const RootLayout = () => {
                 </nav>
             </header>
             <WebSocketProvider url={"ws://localhost:8000/ws"}>
-                <Outlet />
+                <div className="app-body">
+                    <main className="app-main">
+                        <Outlet />
+                    </main>
+                    <DebugPanel isOpen={isDebugOpen} onToggle={() => setIsDebugOpen((o) => !o)} />
+                </div>
             </WebSocketProvider>
             <TanStackRouterDevtools />
         </>

@@ -11,10 +11,17 @@ import {
 
 type WSStatus = "idle" | "connecting" | "open" | "closed" | "error";
 
+export type WsLogEntry = {
+    direction: "sent" | "received";
+    timestamp: Date;
+    raw: string;
+};
+
 type WebSocketContextValue = {
     status: WSStatus;
     sendMessage: (data: any) => void;
     lastMessage: MessageEvent | null;
+    messages: WsLogEntry[];
 };
 
 export const WebSocketContext = createContext<WebSocketContextValue | null>(
@@ -42,6 +49,14 @@ export default function WebSocketProvider({
 
     const [status, setStatus] = useState<WSStatus>("idle");
     const [lastMessage, setLastMessage] = useState<MessageEvent | null>(null);
+    const [messages, setMessages] = useState<WsLogEntry[]>([]);
+
+    const logMessage = useCallback((entry: WsLogEntry) => {
+        setMessages((prev) => {
+            const next = [...prev, entry];
+            return next.length > 200 ? next.slice(next.length - 200) : next;
+        });
+    }, []);
 
     function cancelReconnect() {
         if (reconnectTimerRef.current != null) {
@@ -79,7 +94,10 @@ export default function WebSocketProvider({
                 ws.send(msg);
             }
         }
-        ws.onmessage = (evt) => setLastMessage(evt);
+        ws.onmessage = (evt) => {
+            setLastMessage(evt);
+            logMessage({ direction: "received", timestamp: new Date(), raw: evt.data });
+        };
         ws.onerror = () => setStatus("error");
 
         ws.onclose = () => {
@@ -90,7 +108,7 @@ export default function WebSocketProvider({
             // Automatically attempt to reconnect
             setTimeout(() => connect(), 1000);
         };
-    }, [url]);
+    }, [url, logMessage]);
 
     // Initialise websocket connection on page load.
     useEffect(() => {
@@ -111,14 +129,16 @@ export default function WebSocketProvider({
                 return;
             }
 
-            ws.send(JSON.stringify({ data: message }));
+            const raw = JSON.stringify({ data: message });
+            logMessage({ direction: "sent", timestamp: new Date(), raw });
+            ws.send(raw);
         },
-        [connect],
+        [connect, logMessage],
     );
 
     const value = useMemo(
-        () => ({ status, sendMessage, lastMessage }),
-        [status, sendMessage, lastMessage],
+        () => ({ status, sendMessage, lastMessage, messages }),
+        [status, sendMessage, lastMessage, messages],
     );
 
     return (

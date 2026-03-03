@@ -1,10 +1,11 @@
 :root {
     --min-sidebar-width: 300px;
-    --board-size: calc(min(90vh, 100vw - 2 * var(--min-sidebar-width)));
-    --sidebar-width: calc(0.4 * (100vw - var(--board-size)));
 }
 
 .game-layout {
+    --board-size: min(90vh, calc(100cqw - 2 * var(--min-sidebar-width)));
+    --sidebar-width: calc(0.4 * (100cqw - var(--board-size)));
+
     display: flex;
     flex-direction: row;
     justify-content: center;
