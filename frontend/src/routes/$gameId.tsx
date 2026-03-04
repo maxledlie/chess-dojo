@@ -46,7 +46,7 @@ function GamePage() {
     const navigate = useNavigate({ from: "/$gameId" });
     const [isSearchingOpponent, setIsSearchingOpponent] = useState(false);
 
-    const [messages, setMessages] = useState<string[]>([]);
+    const [messages, setMessages] = useState<{ text: string; isOwn: boolean }[]>([]);
 
     const chessRef = useRef(new Chess());
     const [fen, setFen] = useState(chessRef.current.fen());
@@ -71,7 +71,13 @@ function GamePage() {
         chessRef.current = chess;
         setFen(chess.fen());
 
-        setMessages((game.chat ?? []).map((c) => c.content));
+        const myId = color === "white" ? game.white_id : game.black_id;
+        setMessages(
+            (game.chat ?? []).map((c) => ({
+                text: c.content,
+                isOwn: c.player_id === myId,
+            })),
+        );
     }, [game]);
 
     // Handle messages
@@ -85,7 +91,10 @@ function GamePage() {
         switch (msg.msg_type) {
             case "chat_receive": {
                 const data: ChatReceiveData = msg;
-                setMessages((messages) => [...messages, data.message]);
+                setMessages((messages) => [
+                    ...messages,
+                    { text: data.message, isOwn: false },
+                ]);
                 break;
             }
             case "game_complete": {
@@ -184,7 +193,10 @@ function GamePage() {
                         game_id: gameId,
                         message: m,
                     });
-                    setMessages((messages) => [...messages, m]);
+                    setMessages((messages) => [
+                        ...messages,
+                        { text: m, isOwn: true },
+                    ]);
                 }}
             />
             <BoardPanel fen={fen} color={color} onDrop={handleDrop} />
@@ -192,7 +204,10 @@ function GamePage() {
                 game={game}
                 isSearchingOpponent={isSearchingOpponent}
                 onFindNewOpponent={() => {
-                    sendMessage({ msg_type: "game_request", time_control: "blitz_5p0" });
+                    sendMessage({
+                        msg_type: "game_request",
+                        time_control: "blitz_5p0",
+                    });
                     setIsSearchingOpponent(true);
                 }}
             />
@@ -201,7 +216,7 @@ function GamePage() {
 }
 
 interface ChatPanelProps {
-    messages: string[];
+    messages: { text: string; isOwn: boolean }[];
     sendMessage: (m: string) => void;
 }
 function ChatPanel({ messages, sendMessage }: ChatPanelProps) {
@@ -209,7 +224,6 @@ function ChatPanel({ messages, sendMessage }: ChatPanelProps) {
 
     function handleChatSubmit() {
         if (inputValue.trim()) {
-            console.log("Sending chat message: ", inputValue);
             sendMessage(inputValue);
             setInputValue("");
         }
@@ -224,9 +238,16 @@ function ChatPanel({ messages, sendMessage }: ChatPanelProps) {
 
     return (
         <div className="chat-panel">
-            {messages.map((m, i) => (
-                <div key={i}>{m}</div>
-            ))}
+            <div className="chat-messages">
+                {messages.map((m, i) => (
+                    <div
+                        key={i}
+                        className={`chat-message ${m.isOwn ? "chat-message--own" : "chat-message--opponent"}`}
+                    >
+                        {m.text}
+                    </div>
+                ))}
+            </div>
             <Input
                 placeholder="Please be nice in the chat!"
                 value={inputValue}
@@ -279,9 +300,9 @@ function resultLonghand(result: NonNullable<Game["result"]>): string {
                 case "seventy_five_move":
                     return "Draw by 75-move rule";
                 case "insufficient_material":
-                    return "Insufficient material · Draw";
+                    return "Insufficient material • Draw";
                 case "repetition":
-                    return "Threefold repetition · Draw";
+                    return "Threefold repetition • Draw";
             }
     }
 
@@ -290,11 +311,11 @@ function resultLonghand(result: NonNullable<Game["result"]>): string {
 
     switch (result.result_type) {
         case "clock_flag":
-            return `${loser} time out · ${winner} is victorious`;
+            return `${loser} time out • ${winner} is victorious`;
         case "mate":
-            return `Checkmate · ${winner} is victorious`;
+            return `Checkmate • ${winner} is victorious`;
         case "resign":
-            return `${loser} resigned · ${winner} is victorious`;
+            return `${loser} resigned • ${winner} is victorious`;
     }
 }
 
@@ -304,21 +325,32 @@ interface MovePanelProps {
     onFindNewOpponent: () => void;
 }
 
-const MovesPanel = ({ game, isSearchingOpponent, onFindNewOpponent }: MovePanelProps) => {
+const MovesPanel = ({
+    game,
+    isSearchingOpponent,
+    onFindNewOpponent,
+}: MovePanelProps) => {
     return (
         <div className="move-panel">
             {game.result && (
-                <div className="results-panel">
-                    <b>{resultShorthand(game.result)}</b>
-                    <em>{resultLonghand(game.result)}</em>
+                <>
+                    <div className="results-panel">
+                        <b>{resultShorthand(game.result)}</b>
+                        <em>{resultLonghand(game.result)}</em>
+                    </div>
                     {isSearchingOpponent ? (
                         <p>Searching...</p>
                     ) : (
-                        <Button onClick={onFindNewOpponent}>NEW OPPONENT</Button>
+                        <Button
+                            className="postgame-button"
+                            onClick={onFindNewOpponent}
+                        >
+                            NEW OPPONENT
+                        </Button>
                     )}
-                </div>
+                </>
             )}
-            <ActionButtons />
+            {!game.result && <ActionButtons />}
         </div>
     );
 };
