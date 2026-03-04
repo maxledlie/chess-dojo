@@ -1,12 +1,34 @@
 import json
 from abc import ABC, abstractmethod
 
+import chess as pychess
 import redis.asyncio as redis
 from pydantic import TypeAdapter
 
-from models import ChatMessage, Game, GameResult
+from models import ChatMessage, ClockFlag, Color, Draw, DrawReason, Game, GameResult, Mate, Resign, Stalemate
 
 _result_adapter: TypeAdapter[GameResult] = TypeAdapter(GameResult)
+
+
+def _result_from_moves(moves: list[str]) -> GameResult | None:
+    board = pychess.Board()
+    for m in moves:
+        board.push_san(m)
+    outcome = board.outcome()
+    if outcome is None:
+        return None
+    if outcome.termination == pychess.Termination.CHECKMATE:
+        winner = Color.White if outcome.winner else Color.Black
+        return Mate(winner=winner)
+    if outcome.termination == pychess.Termination.STALEMATE:
+        return Stalemate()
+    if outcome.termination == pychess.Termination.INSUFFICIENT_MATERIAL:
+        return Draw(reason=DrawReason.InsufficientMaterial)
+    if outcome.termination == pychess.Termination.SEVENTYFIVE_MOVES:
+        return Draw(reason=DrawReason.SeventyFiveMove)
+    if outcome.termination == pychess.Termination.FIVEFOLD_REPETITION:
+        return Draw(reason=DrawReason.Repetition)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -25,13 +47,25 @@ class GameStore(ABC):
     async def get_moves(self, game_id: str) -> list[str]: ...
 
     @abstractmethod
-    async def append_move(self, game_id: str, san: str) -> None: ...
+    async def append_move(self, game_id: str, san: str) -> GameResult | None:
+        """Append a move and atomically set the game result if the move is terminal
+        (checkmate, stalemate, insufficient material, seventy-five move rule, or
+        fivefold repetition). Returns the terminal GameResult, or None if the game
+        continues. For all other termination conditions use the explicit end_by_*
+        methods below."""
+        ...
 
     @abstractmethod
     async def append_chat(self, game_id: str, msg: ChatMessage) -> None: ...
 
     @abstractmethod
-    async def set_result(self, game_id: str, result: GameResult) -> None: ...
+    async def end_by_resignation(self, game_id: str, winner: Color) -> None: ...
+
+    @abstractmethod
+    async def end_by_timeout(self, game_id: str, winner: Color) -> None: ...
+
+    @abstractmethod
+    async def end_by_draw_agreement(self, game_id: str) -> None: ...
 
     @abstractmethod
     async def delete_game(self, game_id: str) -> None: ...
@@ -90,14 +124,30 @@ class RedisGameStore(GameStore):
     async def get_moves(self, game_id: str) -> list[str]:
         return await self._rc.lrange(_moves_key(game_id), 0, -1)
 
-    async def append_move(self, game_id: str, san: str) -> None:
-        await self._rc.rpush(_moves_key(game_id), san)
+    async def append_move(self, game_id: str, san: str) -> GameResult | None:
+        current_moves = await self._rc.lrange(_moves_key(game_id), 0, -1)
+        result = _result_from_moves(current_moves + [san])
+        pipe = self._rc.pipeline()
+        pipe.rpush(_moves_key(game_id), san)
+        if result is not None:
+            pipe.hset(_game_key(game_id), mapping={"result": result.model_dump_json()})
+        await pipe.execute()
+        return result
 
     async def append_chat(self, game_id: str, msg: ChatMessage) -> None:
         await self._rc.rpush(_chat_key(game_id), msg.model_dump_json())
 
-    async def set_result(self, game_id: str, result: GameResult) -> None:
+    async def _set_result(self, game_id: str, result: GameResult) -> None:
         await self._rc.hset(_game_key(game_id), mapping={"result": result.model_dump_json()})
+
+    async def end_by_resignation(self, game_id: str, winner: Color) -> None:
+        await self._set_result(game_id, Resign(winner=winner))
+
+    async def end_by_timeout(self, game_id: str, winner: Color) -> None:
+        await self._set_result(game_id, ClockFlag(winner=winner))
+
+    async def end_by_draw_agreement(self, game_id: str) -> None:
+        await self._set_result(game_id, Draw(reason=DrawReason.Agreement))
 
     async def delete_game(self, game_id: str) -> None:
         await self._rc.delete(
@@ -125,20 +175,34 @@ class MemoryGameStore(GameStore):
         game = self._games.get(game_id)
         return list(game.moves) if game is not None else []
 
-    async def append_move(self, game_id: str, san: str) -> None:
+    async def append_move(self, game_id: str, san: str) -> GameResult | None:
         game = self._games.get(game_id)
-        if game is not None:
-            game.moves.append(san)
+        if game is None:
+            return None
+        game.moves.append(san)
+        result = _result_from_moves(game.moves)
+        if result is not None:
+            game.result = result
+        return result
 
     async def append_chat(self, game_id: str, msg: ChatMessage) -> None:
         game = self._games.get(game_id)
         if game is not None:
             game.chat.append(msg)
 
-    async def set_result(self, game_id: str, result: GameResult) -> None:
+    def _set_result(self, game_id: str, result: GameResult) -> None:
         game = self._games.get(game_id)
         if game is not None:
             game.result = result
+
+    async def end_by_resignation(self, game_id: str, winner: Color) -> None:
+        self._set_result(game_id, Resign(winner=winner))
+
+    async def end_by_timeout(self, game_id: str, winner: Color) -> None:
+        self._set_result(game_id, ClockFlag(winner=winner))
+
+    async def end_by_draw_agreement(self, game_id: str) -> None:
+        self._set_result(game_id, Draw(reason=DrawReason.Agreement))
 
     async def delete_game(self, game_id: str) -> None:
         self._games.pop(game_id, None)

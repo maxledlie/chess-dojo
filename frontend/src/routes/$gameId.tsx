@@ -251,8 +251,8 @@ function resultLonghand(result: NonNullable<Game["result"]>): string {
             switch (result.reason) {
                 case "agreement":
                     return "Draw by mututal agreement";
-                case "fifty_move":
-                    return "Draw by fifty move rule";
+                case "seventy_five_move":
+                    return "Draw by 75-move rule";
                 case "insufficient_material":
                     return "Insufficient material · Draw";
                 case "repetition":
@@ -281,7 +281,7 @@ const MovesPanel = ({ game }: MovePanelProps) => {
     return (
         <div className="move-panel">
             {game.result && (
-                <div>
+                <div className="results-panel">
                     <b>{resultShorthand(game.result)}</b>
                     <em>{resultLonghand(game.result)}</em>
                 </div>

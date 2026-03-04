@@ -15,12 +15,12 @@ from fastapi import (
     WebSocketDisconnect,
     WebSocketException,
 )
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from structlog import get_logger
 import structlog
 
 from shared.redis import queued_key, request_hash_key, waiting_zset_key
-from models import Color, Resign
+from models import Color, Draw, Stalemate
 from shared.utils import now_ms
 from websocket.models import (
     ChatReceiveMsg,
@@ -39,6 +39,13 @@ from models import ChatMessage
 
 router = APIRouter()
 logger: structlog.stdlib.BoundLogger = get_logger()
+
+
+class MoveValidation(BaseModel):
+    accepted: bool
+    san: str | None = None
+    reason: str | None = None
+
 
 load_dotenv()
 ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173")
@@ -187,8 +194,7 @@ async def handle_game_resign(state: AppState, session_id: str, msg: GameResignMs
         return
 
     winner = Color.White if session_id == game.black_id else Color.Black
-    result = Resign(winner=winner)
-    await state.game_store.set_result(msg.game_id, result)
+    await state.game_store.end_by_resignation(msg.game_id, winner)
 
     completion_msg = GameCompleteMsg(game_id=msg.game_id, result=winner.value)
     for sid in [game.white_id, game.black_id]:
@@ -221,27 +227,25 @@ async def handle_chat_send(state: AppState, session_id: str, msg: ChatSendMsg):
     await state.manager.send_to(receiver_session_id, outgoing_msg)
 
 
-def _validate_move(
-    moves: list[str], move_san: str, is_white: bool
-) -> tuple[bool, str | None, str | None]:
+def _validate_move(moves: list[str], move_san: str, is_white: bool) -> MoveValidation:
     board = pychess.Board()
     for m in moves:
         board.push_san(m)
 
     if (board.turn == pychess.WHITE) != is_white:
-        return False, None, "Not your turn"
+        return MoveValidation(accepted=False, reason="Not your turn")
 
     try:
         move = board.parse_san(move_san)
         san = board.san(move)  # normalise to canonical SAN
-        return True, san, None
+        return MoveValidation(accepted=True, san=san)
     except (
         ValueError,
         pychess.InvalidMoveError,
         pychess.IllegalMoveError,
         pychess.AmbiguousMoveError,
     ):
-        return False, None, "Illegal move"
+        return MoveValidation(accepted=False, reason="Illegal move")
 
 
 async def handle_move(state: AppState, session_id: str, msg: MoveSendMsg):
@@ -253,20 +257,33 @@ async def handle_move(state: AppState, session_id: str, msg: MoveSendMsg):
         return
 
     is_white = session_id == game.white_id
-    accepted, san, reason = _validate_move(game.moves, msg.move, is_white)
+    validation = _validate_move(game.moves, msg.move, is_white)
 
-    if accepted and san:
-        await state.game_store.append_move(msg.game_id, san)
+    if validation.accepted and validation.san:
+        terminal_result = await state.game_store.append_move(msg.game_id, validation.san)
         opponent_id = game.black_id if is_white else game.white_id
-        result = Message(
-            data=MoveResultMsg(game_id=msg.game_id, accepted=True, move=san)
+        move_msg = Message(
+            data=MoveResultMsg(game_id=msg.game_id, accepted=True, move=validation.san)
         )
-        await state.manager.send_to(session_id, result)
-        await state.manager.send_to(opponent_id, result)
+        await state.manager.send_to(session_id, move_msg)
+        await state.manager.send_to(opponent_id, move_msg)
+
+        if terminal_result is not None:
+            if isinstance(terminal_result, (Stalemate, Draw)):
+                result_str = "draw"
+            else:
+                result_str = terminal_result.winner.value
+            completion_msg = Message(
+                data=GameCompleteMsg(game_id=msg.game_id, result=result_str)
+            )
+            for sid in [game.white_id, game.black_id]:
+                await state.manager.send_to(sid, completion_msg)
     else:
         await state.manager.send_to(
             session_id,
             Message(
-                data=MoveResultMsg(game_id=msg.game_id, accepted=False, reason=reason)
+                data=MoveResultMsg(
+                    game_id=msg.game_id, accepted=False, reason=validation.reason
+                )
             ),
         )

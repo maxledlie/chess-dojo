@@ -33,6 +33,13 @@
     justify-content: center;
 }
 
+.results-panel {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
 .game-actions {
     display: flex;
     gap: 30px;

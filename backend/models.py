@@ -42,7 +42,7 @@ class DrawReason(str, Enum):
     Repetition = "repetition"
     Agreement = "agreement"
     InsufficientMaterial = "insufficient_material"
-    FiftyMove = "fifty_move"
+    SeventyFiveMove = "seventy_five_move"
 
 
 class Draw(BaseModel):
