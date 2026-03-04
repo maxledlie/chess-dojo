@@ -31,6 +31,9 @@ class GameStore(ABC):
     async def append_chat(self, game_id: str, msg: ChatMessage) -> None: ...
 
     @abstractmethod
+    async def set_result(self, game_id: str, result: GameResult) -> None: ...
+
+    @abstractmethod
     async def delete_game(self, game_id: str) -> None: ...
 
 
@@ -93,6 +96,9 @@ class RedisGameStore(GameStore):
     async def append_chat(self, game_id: str, msg: ChatMessage) -> None:
         await self._rc.rpush(_chat_key(game_id), msg.model_dump_json())
 
+    async def set_result(self, game_id: str, result: GameResult) -> None:
+        await self._rc.hset(_game_key(game_id), mapping={"result": result.model_dump_json()})
+
     async def delete_game(self, game_id: str) -> None:
         await self._rc.delete(
             _game_key(game_id), _moves_key(game_id), _chat_key(game_id)
@@ -128,6 +134,11 @@ class MemoryGameStore(GameStore):
         game = self._games.get(game_id)
         if game is not None:
             game.chat.append(msg)
+
+    async def set_result(self, game_id: str, result: GameResult) -> None:
+        game = self._games.get(game_id)
+        if game is not None:
+            game.result = result
 
     async def delete_game(self, game_id: str) -> None:
         self._games.pop(game_id, None)

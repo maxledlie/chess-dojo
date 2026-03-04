@@ -35,7 +35,7 @@ interface MoveResultData {
 function GamePage() {
     const { gameId } = Route.useParams();
     const { color } = Route.useSearch();
-    const { data: game, isPending } = useGetGame(gameId);
+    const { data: game, isPending, refetch: refetchGame } = useGetGame(gameId);
 
     const [messages, setMessages] = useState<string[]>([]);
 
@@ -80,6 +80,7 @@ function GamePage() {
                 break;
             }
             case "game_complete": {
+                refetchGame();
                 break;
             }
             case "move_result": {

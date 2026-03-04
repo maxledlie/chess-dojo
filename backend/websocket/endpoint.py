@@ -20,6 +20,7 @@ from structlog import get_logger
 import structlog
 
 from shared.redis import queued_key, request_hash_key, waiting_zset_key
+from models import Color, Resign
 from shared.utils import now_ms
 from websocket.models import (
     ChatReceiveMsg,
@@ -178,7 +179,6 @@ async def handle_game_request(state: AppState, session_id: str, msg: GameRequest
 
 
 async def handle_game_resign(state: AppState, session_id: str, msg: GameResignMsg):
-    # Broadcast the result to both players
     game = await state.game_store.get_game(msg.game_id)
     if game is None:
         return
@@ -186,15 +186,13 @@ async def handle_game_resign(state: AppState, session_id: str, msg: GameResignMs
     if session_id not in [game.white_id, game.black_id]:
         return
 
-    result = "white" if session_id == game.black_id else "black"
+    winner = Color.White if session_id == game.black_id else Color.Black
+    result = Resign(winner=winner)
+    await state.game_store.set_result(msg.game_id, result)
 
-    completion_msg = GameCompleteMsg(game_id=msg.game_id, result=result)
+    completion_msg = GameCompleteMsg(game_id=msg.game_id, result=winner.value)
     for sid in [game.white_id, game.black_id]:
         await state.manager.send_to(sid, Message(data=completion_msg))
-
-    # TODO: Don't delete the game record until completion acknowledged by both parties.
-    # (And require similar acknowledgement in other cases)
-    await state.game_store.delete_game(msg.game_id)
 
 
 async def handle_chat_send(state: AppState, session_id: str, msg: ChatSendMsg):
