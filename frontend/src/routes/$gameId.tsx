@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Input } from "@base-ui/react/input";
 import { Chessboard } from "react-chessboard";
 import type { PieceDropHandlerArgs } from "react-chessboard";
@@ -32,10 +32,19 @@ interface MoveResultData {
     reason?: string;
 }
 
+interface GameBeginData {
+    msg_type: "game_begin";
+    game_id: string;
+    you_are_white: boolean;
+}
+
 function GamePage() {
     const { gameId } = Route.useParams();
     const { color } = Route.useSearch();
     const { data: game, isPending, refetch: refetchGame } = useGetGame(gameId);
+
+    const navigate = useNavigate({ from: "/$gameId" });
+    const [isSearchingOpponent, setIsSearchingOpponent] = useState(false);
 
     const [messages, setMessages] = useState<string[]>([]);
 
@@ -81,6 +90,15 @@ function GamePage() {
             }
             case "game_complete": {
                 refetchGame();
+                break;
+            }
+            case "game_begin": {
+                const data: GameBeginData = msg;
+                navigate({
+                    to: "/$gameId",
+                    params: { gameId: data.game_id },
+                    search: { color: data.you_are_white ? "white" : "black" },
+                });
                 break;
             }
             case "move_result": {
@@ -170,7 +188,14 @@ function GamePage() {
                 }}
             />
             <BoardPanel fen={fen} color={color} onDrop={handleDrop} />
-            <MovesPanel game={game} />
+            <MovesPanel
+                game={game}
+                isSearchingOpponent={isSearchingOpponent}
+                onFindNewOpponent={() => {
+                    sendMessage({ msg_type: "game_request", time_control: "blitz_5p0" });
+                    setIsSearchingOpponent(true);
+                }}
+            />
         </div>
     );
 }
@@ -275,15 +300,22 @@ function resultLonghand(result: NonNullable<Game["result"]>): string {
 
 interface MovePanelProps {
     game: Game;
+    isSearchingOpponent: boolean;
+    onFindNewOpponent: () => void;
 }
 
-const MovesPanel = ({ game }: MovePanelProps) => {
+const MovesPanel = ({ game, isSearchingOpponent, onFindNewOpponent }: MovePanelProps) => {
     return (
         <div className="move-panel">
             {game.result && (
                 <div className="results-panel">
                     <b>{resultShorthand(game.result)}</b>
                     <em>{resultLonghand(game.result)}</em>
+                    {isSearchingOpponent ? (
+                        <p>Searching...</p>
+                    ) : (
+                        <Button onClick={onFindNewOpponent}>NEW OPPONENT</Button>
+                    )}
                 </div>
             )}
             <ActionButtons />
