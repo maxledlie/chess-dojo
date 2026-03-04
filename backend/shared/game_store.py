@@ -2,8 +2,11 @@ import json
 from abc import ABC, abstractmethod
 
 import redis.asyncio as redis
+from pydantic import TypeAdapter
 
-from models import ChatMessage, Game
+from models import ChatMessage, Game, GameResult
+
+_result_adapter: TypeAdapter[GameResult] = TypeAdapter(GameResult)
 
 
 # ---------------------------------------------------------------------------
@@ -56,12 +59,9 @@ class RedisGameStore(GameStore):
         mapping: dict[str, str] = {
             "white_id": game.white_id,
             "black_id": game.black_id,
-            "status": game.status,
         }
         if game.result is not None:
-            mapping["result"] = game.result
-        if game.termination is not None:
-            mapping["termination"] = game.termination
+            mapping["result"] = game.result.model_dump_json()
         await self._rc.hset(_game_key(game_id), mapping=mapping)
 
     async def get_game(self, game_id: str) -> Game | None:
@@ -74,13 +74,12 @@ class RedisGameStore(GameStore):
         if not meta:
             return None
 
+        result_raw = meta.get("result")
         chat = [ChatMessage(**json.loads(c)) for c in chat_raw]
         return Game(
             white_id=meta["white_id"],
             black_id=meta["black_id"],
-            status=meta.get("status", "active"),
-            result=meta.get("result"),
-            termination=meta.get("termination"),
+            result=_result_adapter.validate_json(result_raw) if result_raw else None,
             moves=moves,
             chat=chat,
         )
@@ -95,7 +94,9 @@ class RedisGameStore(GameStore):
         await self._rc.rpush(_chat_key(game_id), msg.model_dump_json())
 
     async def delete_game(self, game_id: str) -> None:
-        await self._rc.delete(_game_key(game_id), _moves_key(game_id), _chat_key(game_id))
+        await self._rc.delete(
+            _game_key(game_id), _moves_key(game_id), _chat_key(game_id)
+        )
 
 
 # ---------------------------------------------------------------------------

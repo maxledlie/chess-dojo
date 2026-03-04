@@ -9,6 +9,7 @@ import { Flag, Undo, X } from "lucide-react";
 import { useGetGame } from "../queries/games";
 import { useWebSocket } from "../components/WebSocketProvider";
 import { Chess } from "chess.js";
+import type { Game } from "../client";
 
 export const Route = createFileRoute("/$gameId")({
     validateSearch: (s: Record<string, unknown>) => ({
@@ -53,13 +54,15 @@ function GamePage() {
         initializedRef.current = true;
 
         const chess = new Chess();
-        for (const san of game.moves) {
-            try { chess.move(san); } catch {}
+        for (const san of game.moves ?? []) {
+            try {
+                chess.move(san);
+            } catch {}
         }
         chessRef.current = chess;
         setFen(chess.fen());
 
-        setMessages(game.chat.map((c) => c.content));
+        setMessages((game.chat ?? []).map((c) => c.content));
     }, [game]);
 
     // Handle messages
@@ -87,7 +90,9 @@ function GamePage() {
                         pendingMoveRef.current = null;
                     } else {
                         // Opponent's move — apply it now.
-                        try { chessRef.current.move(data.move); } catch {}
+                        try {
+                            chessRef.current.move(data.move);
+                        } catch {}
                         setFen(chessRef.current.fen());
                     }
                 } else if (!data.accepted) {
@@ -101,20 +106,31 @@ function GamePage() {
         }
     }, [lastMessage]);
 
-    function handleDrop({ sourceSquare, targetSquare }: PieceDropHandlerArgs): boolean {
+    function handleDrop({
+        sourceSquare,
+        targetSquare,
+    }: PieceDropHandlerArgs): boolean {
         if (!targetSquare) return false;
         const chess = chessRef.current;
         let result;
         try {
-            result = chess.move({ from: sourceSquare, to: targetSquare, promotion: "q" });
+            result = chess.move({
+                from: sourceSquare,
+                to: targetSquare,
+                promotion: "q",
+            });
         } catch {
-            return false;  // illegal locally — snap back
+            return false; // illegal locally — snap back
         }
         if (!result) return false;
 
         pendingMoveRef.current = result.san;
         setFen(chess.fen());
-        sendMessage({ msg_type: "move_send", game_id: gameId, move: result.san });
+        sendMessage({
+            msg_type: "move_send",
+            game_id: gameId,
+            move: result.san,
+        });
         return true;
     }
 
@@ -153,7 +169,7 @@ function GamePage() {
                 }}
             />
             <BoardPanel fen={fen} color={color} onDrop={handleDrop} />
-            <MovesPanel />
+            <MovesPanel game={game} />
         </div>
     );
 }
@@ -214,9 +230,61 @@ function BoardPanel({ fen, color, onDrop }: BoardPanelProps) {
     );
 }
 
-const MovesPanel = ({}) => {
+function resultShorthand(result: NonNullable<Game["result"]>): string {
+    switch (result.result_type) {
+        case "clock_flag":
+        case "mate":
+        case "resign":
+            return result.winner === "white" ? "1-0" : "0-1";
+        case "draw":
+        case "stalemate":
+            return "½-½";
+    }
+}
+
+function resultLonghand(result: NonNullable<Game["result"]>): string {
+    switch (result.result_type) {
+        case "stalemate":
+            return "Stalemate";
+        case "draw":
+            switch (result.reason) {
+                case "agreement":
+                    return "Draw by mututal agreement";
+                case "fifty_move":
+                    return "Draw by fifty move rule";
+                case "insufficient_material":
+                    return "Insufficient material · Draw";
+                case "repetition":
+                    return "Threefold repetition · Draw";
+            }
+    }
+
+    const winner = result.winner === "white" ? "White" : "Black";
+    const loser = result.winner === "white" ? "Black" : "White";
+
+    switch (result.result_type) {
+        case "clock_flag":
+            return `${loser} time out · ${winner} is victorious`;
+        case "mate":
+            return `Checkmate · ${winner} is victorious`;
+        case "resign":
+            return `${loser} resigned · ${winner} is victorious`;
+    }
+}
+
+interface MovePanelProps {
+    game: Game;
+}
+
+const MovesPanel = ({ game }: MovePanelProps) => {
     return (
         <div className="move-panel">
+            {game.result && (
+                <div>
+                    <b>{resultShorthand(game.result)}</b>
+                    <em>{resultLonghand(game.result)}</em>
+                </div>
+            )}
             <ActionButtons />
         </div>
     );
