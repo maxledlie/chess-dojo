@@ -7,11 +7,9 @@ import redis.asyncio as redis
 load_dotenv()
 
 # Redis event streams
-MM_REQUESTS_STREAM = "mm:requests"
 MM_MATCHES_STREAM = "mm:matches"
 
 # Redis consumer groups
-MM_REQUESTS_GROUP = "mm-requests-daemons"
 MM_MATCHES_GROUP = "mm-matches-apis"
 
 
@@ -34,7 +32,6 @@ async def redis_client():
 
 async def _ensure_groups(rc: redis.Redis):
     await _ensure_group(rc, MM_MATCHES_STREAM, MM_MATCHES_GROUP)
-    await _ensure_group(rc, MM_REQUESTS_STREAM, MM_REQUESTS_GROUP)
 
 
 async def _ensure_group(r: redis.Redis, stream: str, group: str):
@@ -47,3 +44,15 @@ async def _ensure_group(r: redis.Redis, stream: str, group: str):
         # BUSYGROUP means the group already exists
         if "BUSYGROUP" not in str(e):
             raise
+
+
+def waiting_zset_key(time_control: str) -> str:
+    return f"mm:wait:{time_control}"
+
+
+def queued_key(session_id: str) -> str:
+    return f"mm:queued:{session_id}"
+
+
+def request_hash_key(time_control: str, session_id: str) -> str:
+    return f"mm:req:{time_control}:{session_id}"

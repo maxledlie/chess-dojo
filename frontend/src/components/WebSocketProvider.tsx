@@ -45,7 +45,7 @@ export default function WebSocketProvider({
     const reconnectTimerRef = useRef<number | null>(null);
 
     // Store messages in an in-memory queue until socket is open
-    const sendQueueRef = useRef<any[]>([]);
+    const sendQueueRef = useRef<string[]>([]);
 
     const [status, setStatus] = useState<WSStatus>("idle");
     const [lastMessage, setLastMessage] = useState<MessageEvent | null>(null);
@@ -124,7 +124,9 @@ export default function WebSocketProvider({
             const ws = wsRef.current;
 
             if (!ws || ws.readyState !== WebSocket.OPEN) {
-                sendQueueRef.current.push(message);
+                const raw = JSON.stringify({ data: message });
+                logMessage({ direction: "sent", timestamp: new Date(), raw });
+                sendQueueRef.current.push(raw);
                 connect();
                 return;
             }

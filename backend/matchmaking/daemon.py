@@ -5,147 +5,75 @@ import string
 import structlog
 from shared.redis import (
     MM_MATCHES_STREAM,
-    MM_REQUESTS_GROUP,
-    MM_REQUESTS_STREAM,
+    queued_key,
+    request_hash_key,
+    waiting_zset_key,
     redis_client,
 )
-from dataclasses import dataclass, asdict
 
 from shared.utils import now_ms
 
 
 logger = structlog.get_logger()
 
-
-# Number of matchmaking requests to read at once
-MM_BATCH_SIZE = 50
-
-# How long to wait for a matchmaking request before retrying if the queue is empty
-MM_WAIT_TIME = 1000
-
-
-@dataclass(frozen=True)
-class MMRequest:
-    msg_id: str
-    session_id: str
-    rating: int
-    time_control: str
-    created_ts: int
-
-
-@dataclass(frozen=True)
-class Match:
-    game_id: str
-    msg_id_a: str
-    msg_id_b: str
-    session_a: str
-    session_b: str
-    time_control: str
+POLL_INTERVAL_S = 0.5
 
 
 async def _amain(daemon_id: str):
     async with redis_client() as rc:
-        # Clear pending entries list on startup
-
-        # In memory queue for waiting players per time control
-        waiting: dict[str, list[MMRequest]] = {}
-
         while True:
             try:
-                resp = await rc.xreadgroup(
-                    groupname=MM_REQUESTS_GROUP,
-                    consumername=daemon_id,
-                    streams={MM_REQUESTS_STREAM: ">"},
-                    count=MM_BATCH_SIZE,
-                    block=MM_WAIT_TIME,
-                )
-                if not resp:
-                    # Timed out waiting for the first game request. Restart read.
-                    continue
-
-                for stream, entries in resp:
-                    for msg_id, fields in entries:
-                        req = MMRequest(
-                            msg_id=msg_id,
-                            session_id=fields["session_id"],
-                            rating=int(fields.get("rating", "1200")),
-                            time_control=fields.get("time_control", "blitz_5p0"),
-                            created_ts=int(fields.get("ts", str(now_ms()))),
-                        )
-                        logger.info("Consuming matchmaking request", **asdict(req))
-
-                        # Add to waiting pool
-                        pool = waiting.setdefault(req.time_control, [])
-                        pool.append(req)
-
-                        matches = find_matches(pool)
-
-                        # Persist "match found" events and acknowledge the requests so other
-                        # running daemons won't try to pair them.
-                        for match in matches:
-                            logger.info(
-                                "Created match",
-                                session_a=match.session_a,
-                                session_b=match.session_b,
-                            )
-                            await rc.xadd(
-                                MM_MATCHES_STREAM,
-                                fields={
-                                    "session_a": match.session_a,
-                                    "session_b": match.session_b,
-                                    "game_id": match.game_id,
-                                    "time_control": match.time_control,
-                                    "created_ts": str(now_ms()),
-                                },
-                                maxlen=10_000,
-                                approximate=True,
-                            )
-
-                            for msg_id in [match.msg_id_a, match.msg_id_b]:
-                                logger.debug(
-                                    "Sending ack for game request", msg_id=msg_id
-                                )
-                                await rc.xack(
-                                    MM_REQUESTS_STREAM, MM_REQUESTS_GROUP, msg_id
-                                )
-
+                await _poll_and_match(rc)
+                await asyncio.sleep(POLL_INTERVAL_S)
             except asyncio.CancelledError:
-                logger.info("Matchmaking daemon task cancelled")
                 raise
+            except Exception as e:
+                logger.error("Unexpected error in matchmaking loop", exc_info=e)
+                await asyncio.sleep(POLL_INTERVAL_S)
 
 
-def find_matches(pool: list[MMRequest]) -> list[Match]:
-    """
-    Runs a single matchmaking iteration on a pool of waiting players.
-    NOTE: This mutates the pool by removing players who are matched
-    """
+async def _poll_and_match(rc):
+    tc_keys = await rc.keys("mm:wait:*")
+    for tc_key in tc_keys:
+        time_control = tc_key[len("mm:wait:"):]
+        members = await rc.zrange(tc_key, 0, -1)  # oldest first
 
-    # Naive implementation. Just match first two players in same time control
-    # TODO:
-    # - Prefer players closer in rating
-    # - Prefer players who have been waiting longer
-    # - Gradually widen acceptable rating range the longer players have been waiting
-    # This may require moving waiting players into a separate redis ZSET so we can
-    # efficiently search based on rating ranges.
+        # Validate; prune stale entries (queued key expired but ZSET entry remains)
+        valid = []
+        for session_id in members:
+            if await rc.exists(queued_key(session_id)):
+                valid.append(session_id)
+            else:
+                await rc.zrem(tc_key, session_id)
+                logger.info("Pruned stale queue entry", session_id=session_id)
 
-    if len(pool) >= 2:
-        a = pool.pop()
-        b = pool.pop()
+        # Match in FIFO pairs
+        while len(valid) >= 2:
+            session_a = valid.pop(0)
+            session_b = valid.pop(0)
+            game_id = generate_game_id()
 
-        game_id = generate_game_id()
-
-        return [
-            Match(
-                game_id=game_id,
-                msg_id_a=a.msg_id,
-                msg_id_b=b.msg_id,
-                session_a=a.session_id,
-                session_b=b.session_id,
-                time_control=a.time_control,
+            pipe = rc.pipeline()
+            pipe.zrem(tc_key, session_a, session_b)
+            pipe.delete(queued_key(session_a), queued_key(session_b))
+            pipe.delete(
+                request_hash_key(time_control, session_a),
+                request_hash_key(time_control, session_b),
             )
-        ]
-    else:
-        return []
+            pipe.xadd(
+                MM_MATCHES_STREAM,
+                fields={
+                    "session_a": session_a,
+                    "session_b": session_b,
+                    "game_id": game_id,
+                    "time_control": time_control,
+                    "created_ts": str(now_ms()),
+                },
+                maxlen=10_000,
+                approximate=True,
+            )
+            await pipe.execute()
+            logger.info("Created match", game_id=game_id, session_a=session_a, session_b=session_b)
 
 
 def generate_game_id(length: int = 12) -> str:

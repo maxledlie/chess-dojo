@@ -19,7 +19,7 @@ from pydantic import ValidationError
 from structlog import get_logger
 import structlog
 
-from shared.redis import MM_REQUESTS_STREAM
+from shared.redis import queued_key, request_hash_key, waiting_zset_key
 from shared.utils import now_ms
 from websocket.models import (
     ChatReceiveMsg,
@@ -130,23 +130,6 @@ async def producer_loop(queue: asyncio.Queue[Message], session_id: str, ws: WebS
         raise
 
 
-# -----------------------------
-# Waiting-queue schema helpers
-# -----------------------------
-
-
-def waiting_zset_key(time_control: str) -> str:
-    return f"mm:wait:{time_control}"
-
-
-def request_hash_key(time_control: str, session_id: str) -> str:
-    return f"mm:req:{time_control}:{session_id}"
-
-
-def queued_key(session_id: str) -> str:
-    return f"mm:queued:{session_id}"
-
-
 async def handle_game_request(state: AppState, session_id: str, msg: GameRequestMsg):
     """
     Authoritatively enqueue game request.
@@ -191,20 +174,6 @@ async def handle_game_request(state: AppState, session_id: str, msg: GameRequest
     # Add game request to sorted set, using time of game request as the score
     pipe.zadd(waiting_zset_key(msg.time_control), {session_id: enqueued_ms})
 
-    # Add game request to event stream to wake up daemon. Also useful for debugging.
-    pipe.xadd(
-        MM_REQUESTS_STREAM,
-        fields={
-            "type": "join",
-            "session_id": session_id,
-            "rating": str(rating),
-            "time_control": msg.time_control,
-            "request_id": request_id,
-            "created_ms": str(now_ms()),
-        },
-        maxlen=10_000,
-        approximate=True,
-    )
     await pipe.execute()
 
 
