@@ -6,6 +6,9 @@ import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 
 // Import the generated route tree
 import { routeTree } from "./routeTree.gen";
+import { client } from "./client/client.gen";
+
+client.setConfig({ baseUrl: window.location.origin });
 
 const router = createRouter({ routeTree });
 

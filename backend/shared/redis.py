@@ -17,7 +17,7 @@ MM_MATCHES_GROUP = "mm-matches-apis"
 async def redis_client():
     rc = redis.Redis(
         host=os.environ["REDIS_ENDPOINT"],
-        port=16791,
+        port=int(os.environ.get("REDIS_PORT", 6379)),
         decode_responses=True,
         username="default",
         password=os.environ["REDIS_PASSWORD"],

@@ -1,6 +1,8 @@
 import asyncio
 from contextlib import asynccontextmanager
 
+import os
+
 from fastapi import (
     APIRouter,
     FastAPI,
@@ -79,12 +81,14 @@ def create_app(api_instance_id: str) -> FastAPI:
     app.include_router(router)
     app.include_router(ws_router)
 
-    # TODO: Get frontend origin from environment variables for deployment
+    cors_origins = os.environ.get(
+        "WS_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+    ).split(",")
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+        allow_origins=cors_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type"],
     )
     return app

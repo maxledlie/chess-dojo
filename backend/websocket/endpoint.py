@@ -48,7 +48,7 @@ class MoveValidation(BaseModel):
 
 
 load_dotenv()
-ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173")
+ALLOWED_ORIGINS = os.environ.get("WS_ALLOWED_ORIGINS", "http://localhost:5173")
 ALLOWED_ORIGINS = ALLOWED_ORIGINS.split(",")
 
 
@@ -151,7 +151,7 @@ async def handle_game_request(state: AppState, session_id: str, msg: GameRequest
 
     request_id = uuid.uuid4().hex
     enqueued_ms = now_ms()
-    ttl_s = int(os.environ["GAME_REQUEST_TTL_SECONDS"])
+    ttl_s = 600  # TODO: Config somewhere
 
     # If player already queued, return that fact (up to client what to do)
     ok = await rc.set(queued_key(session_id), request_id, nx=True, ex=ttl_s)
@@ -260,7 +260,9 @@ async def handle_move(state: AppState, session_id: str, msg: MoveSendMsg):
     validation = _validate_move(game.moves, msg.move, is_white)
 
     if validation.accepted and validation.san:
-        terminal_result = await state.game_store.append_move(msg.game_id, validation.san)
+        terminal_result = await state.game_store.append_move(
+            msg.game_id, validation.san
+        )
         opponent_id = game.black_id if is_white else game.white_id
         move_msg = Message(
             data=MoveResultMsg(game_id=msg.game_id, accepted=True, move=validation.san)

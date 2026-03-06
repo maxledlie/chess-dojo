@@ -6,6 +6,10 @@
 # Auto-generated TypeScript client
 frontend/src/client/**
 
+# Terraform
+terraform/.terraform/**
+terraform/terraform.tfstate*
+
 
 # Environment secrets
 .env

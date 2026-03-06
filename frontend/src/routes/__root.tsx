@@ -45,7 +45,7 @@ const RootLayout = () => {
                     </Link>
                 </nav>
             </header>
-            <WebSocketProvider url={"ws://localhost:8000/ws"}>
+            <WebSocketProvider url={`${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws`}>
                 <div className="app-body">
                     <main className="app-main">
                         <Outlet />
