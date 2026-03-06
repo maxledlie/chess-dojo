@@ -8,10 +8,13 @@ class SessionResponse(BaseModel):
     session_id: str
 
 
+ChatMessageContent = Field(min_length=1, max_length=200)
+
+
 class ChatMessage(BaseModel):
     player_id: str
     timestamp: datetime
-    content: str
+    content: str = ChatMessageContent
 
 
 class Color(str, Enum):

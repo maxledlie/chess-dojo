@@ -1,0 +1,23 @@
+services:
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+    volumes:
+      - ./backend:/app
+      - /app/.venv  # preserve the .venv installed during image build
+    ports:
+      - "8000:8000"
+    env_file: ./backend/.env
+    environment:
+      REDIS_ENDPOINT: redis  # override .env — use Docker service name, not localhost
+      REDIS_PORT: "6379"
+      UV_LINK_MODE: copy
+    depends_on:
+      - redis
+    restart: unless-stopped

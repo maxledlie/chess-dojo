@@ -3,6 +3,7 @@ import os
 
 from dotenv import load_dotenv
 import redis.asyncio as redis
+import structlog
 
 load_dotenv()
 
@@ -12,12 +13,19 @@ MM_MATCHES_STREAM = "mm:matches"
 # Redis consumer groups
 MM_MATCHES_GROUP = "mm-matches-apis"
 
+logger = structlog.get_logger()
+
 
 @asynccontextmanager
 async def redis_client():
+    host = os.environ["REDIS_ENDPOINT"]
+    port = int(os.environ.get("REDIS_PORT", 6379))
+
+    logger.info("Establishing connection to Redis", host=host, port=port)
+
     rc = redis.Redis(
-        host=os.environ["REDIS_ENDPOINT"],
-        port=int(os.environ.get("REDIS_PORT", 6379)),
+        host=host,
+        port=port,
         decode_responses=True,
         username="default",
         password=os.environ["REDIS_PASSWORD"],
@@ -25,8 +33,10 @@ async def redis_client():
     await _ensure_groups(rc)
 
     try:
+        logger.info("Redis connection successful")
         yield rc
     finally:
+        logger.info("Closing connection to Redis")
         await rc.close()
 
 

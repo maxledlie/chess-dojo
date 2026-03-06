@@ -3,6 +3,8 @@ from typing import Literal, Union
 
 from pydantic import BaseModel, Field
 
+from models import ChatMessageContent
+
 
 class GameRequestMsg(BaseModel):
     msg_type: Literal["game_request"] = "game_request"
@@ -29,7 +31,7 @@ class GameCompleteMsg(BaseModel):
 class ChatSendMsg(BaseModel):
     msg_type: Literal["chat_send"] = "chat_send"
     game_id: str
-    message: str = Field(min_length=1, max_length=512)
+    message: str = ChatMessageContent
 
 
 class ChatReceiveMsg(BaseModel):

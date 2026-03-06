@@ -39,6 +39,7 @@ structlog.configure(
 )
 
 router = APIRouter()
+logger = structlog.get_logger()
 
 
 @router.get(

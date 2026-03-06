@@ -13,12 +13,14 @@ GRACEFUL_SHUTDOWN_TIMEOUT = 10
 
 
 def run_api_process():
+    logger.bind(proc="api")
     api_instance_id = f"mm-{uuid.uuid4().hex[:8]}"
     app = create_app(api_instance_id)
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
 
 def run_daemon_process():
+    logger.bind(proc="matchmaker")
     daemon_id = f"mm-{uuid.uuid4().hex[:8]}"
     asyncio.run(daemon_main(daemon_id))
 
