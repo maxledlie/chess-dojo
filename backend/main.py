@@ -1,11 +1,17 @@
 import asyncio
+import os
 import uuid
 
 import uvicorn
+from dotenv import load_dotenv
 from api.app import create_app
 from matchmaking.daemon import main as daemon_main
 from multiprocessing import Process
+from shared.logging import configure_logging
 import structlog
+
+load_dotenv()
+configure_logging()
 
 logger = structlog.get_logger()
 
@@ -16,7 +22,7 @@ def run_api_process():
     logger.bind(proc="api")
     api_instance_id = f"mm-{uuid.uuid4().hex[:8]}"
     app = create_app(api_instance_id)
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="warning")
 
 
 def run_daemon_process():
