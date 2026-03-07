@@ -19,4 +19,5 @@ variable "domain_name" {
 variable "container_image" {
   description = "Full ECR image URI to deploy (e.g. 123456789.dkr.ecr.eu-west-2.amazonaws.com/cress:latest)"
   type        = string
+  default     = "168380805746.dkr.ecr.eu-west-2.amazonaws.com/cress:latest"
 }
