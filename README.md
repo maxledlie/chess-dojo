@@ -1,7 +1,7 @@
 # Cress: a home-grown chess server
 
 Cress is a chess server featuring matchmaking and gameplay.
-You can use it at `chess.maxledlie.com`.
+You can use it at [chess.maxledlie.com](chess.maxledlie.com)
 It is largely a clone of [Lichess](https://lichess.org/).
 
 My goals in building it are:

@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Prevent manual paging through outputs.
+export AWS_PAGER=""
+
 REGION="eu-west-2"
 CLUSTER="cress"
 SERVICE="cress-backend"
@@ -50,7 +53,6 @@ if $DEPLOY_BACKEND; then
         --service "$SERVICE" \
         --force-new-deployment \
         --region "$REGION" \
-        --output none
 
     echo "Backend deployed."
 fi
@@ -68,7 +70,6 @@ if $DEPLOY_FRONTEND; then
     aws cloudfront create-invalidation \
         --distribution-id "$CF_DISTRIBUTION_ID" \
         --paths "/*" \
-        --output none
 
     echo "Frontend deployed."
 fi
