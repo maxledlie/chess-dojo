@@ -11,7 +11,9 @@ const RootLayout = () => {
         async function init() {
             const sessionUrl = "/api/session";
             console.log(`Fetching from ${sessionUrl}`);
-            await fetch(sessionUrl, { credentials: "include" });
+            const res = await fetch(sessionUrl, { credentials: "include" });
+            const data = await res.json();
+            sessionStorage.setItem("cress:session-id", data.session_id);
         }
         init();
     }, []);

@@ -29,10 +29,10 @@ function Index() {
         switch (msg.msg_type) {
             case "game_begin": {
                 const data: GameBeginData = msg;
+                sessionStorage.setItem(`cress:game-color:${data.game_id}`, String(data.you_are_white));
                 navigate({
                     to: "/$gameId",
                     params: { gameId: data.game_id },
-                    search: { color: data.you_are_white ? "white" : "black" },
                 });
                 break;
             }

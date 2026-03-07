@@ -8,7 +8,7 @@ import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { routeTree } from "./routeTree.gen";
 import { client } from "./client/client.gen";
 
-client.setConfig({ baseUrl: window.location.origin });
+client.setConfig({ baseUrl: `${window.location.origin}/api` });
 
 const router = createRouter({ routeTree });
 

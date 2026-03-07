@@ -52,7 +52,7 @@ async def ensure_session(request: Request, response: Response):
     return ensure_guest_session(request, response)
 
 
-@router.get("/{game_id}", operation_id="get_game")
+@router.get("/{game_id}", operation_id="get_game", response_model_exclude={"white_id", "black_id"})
 async def get_game(req: Request, game_id: str) -> Game:
     state: AppState = req.app.state.state
     game = await state.game_store.get_game(game_id)

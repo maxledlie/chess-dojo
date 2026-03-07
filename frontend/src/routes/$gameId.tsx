@@ -12,9 +12,6 @@ import { Chess } from "chess.js";
 import type { Game } from "../client";
 
 export const Route = createFileRoute("/$gameId")({
-    validateSearch: (s: Record<string, unknown>) => ({
-        color: (s.color as "white" | "black") ?? "white",
-    }),
     component: GamePage,
 });
 
@@ -40,13 +37,19 @@ interface GameBeginData {
 
 function GamePage() {
     const { gameId } = Route.useParams();
-    const { color } = Route.useSearch();
+    const [isWhite, setIsWhite] = useState(
+        () => sessionStorage.getItem(`cress:game-color:${gameId}`) === "true",
+    );
     const { data: game, isPending, refetch: refetchGame } = useGetGame(gameId);
+
+    console.log(game);
 
     const navigate = useNavigate({ from: "/$gameId" });
     const [isSearchingOpponent, setIsSearchingOpponent] = useState(false);
 
-    const [messages, setMessages] = useState<{ text: string; isOwn: boolean }[]>([]);
+    const [messages, setMessages] = useState<
+        { text: string; isOwn: boolean }[]
+    >([]);
 
     const chessRef = useRef(new Chess());
     const [fen, setFen] = useState(chessRef.current.fen());
@@ -71,11 +74,11 @@ function GamePage() {
         chessRef.current = chess;
         setFen(chess.fen());
 
-        const myId = color === "white" ? game.white_id : game.black_id;
+        const mySessionId = sessionStorage.getItem("cress:session-id");
         setMessages(
             (game.chat ?? []).map((c) => ({
                 text: c.content,
-                isOwn: c.player_id === myId,
+                isOwn: c.player_id === mySessionId,
             })),
         );
     }, [game]);
@@ -103,10 +106,14 @@ function GamePage() {
             }
             case "game_begin": {
                 const data: GameBeginData = msg;
+                sessionStorage.setItem(
+                    `cress:game-color:${data.game_id}`,
+                    String(data.you_are_white),
+                );
+                setIsWhite(data.you_are_white);
                 navigate({
                     to: "/$gameId",
                     params: { gameId: data.game_id },
-                    search: { color: data.you_are_white ? "white" : "black" },
                 });
                 break;
             }
@@ -199,7 +206,7 @@ function GamePage() {
                     ]);
                 }}
             />
-            <BoardPanel fen={fen} color={color} onDrop={handleDrop} />
+            <BoardPanel fen={fen} isWhite={isWhite} onDrop={handleDrop} />
             <MovesPanel
                 game={game}
                 isSearchingOpponent={isSearchingOpponent}
@@ -260,16 +267,16 @@ function ChatPanel({ messages, sendMessage }: ChatPanelProps) {
 
 interface BoardPanelProps {
     fen: string;
-    color: "white" | "black";
+    isWhite: boolean;
     onDrop: (args: PieceDropHandlerArgs) => boolean;
 }
-function BoardPanel({ fen, color, onDrop }: BoardPanelProps) {
+function BoardPanel({ fen, isWhite, onDrop }: BoardPanelProps) {
     return (
         <div className="board-panel">
             <Chessboard
                 options={{
                     position: fen,
-                    boardOrientation: color,
+                    boardOrientation: isWhite ? "white" : "black",
                     onPieceDrop: onDrop,
                 }}
             />
