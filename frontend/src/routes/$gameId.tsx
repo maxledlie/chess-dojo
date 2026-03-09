@@ -12,7 +12,7 @@ import { Button } from "@base-ui/react/button";
 import { Flag, Undo, X } from "lucide-react";
 import { useGetGame } from "../queries/games";
 import { useWebSocket } from "../components/WebSocketProvider";
-import { Chess, Move, type Piece, type Square } from "chess.js";
+import { Chess, Move, type Color, type Piece, type Square } from "chess.js";
 import type { Game } from "../client";
 
 export const Route = createFileRoute("/$gameId")({
@@ -260,6 +260,26 @@ function GamePage() {
         deselectSquare();
     }
 
+    function findCheckedSquares(): Square[] {
+        // Unless we're playing some variant, there should only be one checked square.
+        // But since it's easy to make this generic, we might as well.
+        const chess = chessRef.current;
+        const ret: Square[] = [];
+        for (const color of ["w", "b"]) {
+            const otherColor = color === "w" ? "b" : "w";
+            const kingSquares = chess.findPiece({
+                color: color as Color,
+                type: "k",
+            });
+            for (const square of kingSquares) {
+                if (chess.isAttacked(square, otherColor)) {
+                    ret.push(square);
+                }
+            }
+        }
+        return ret;
+    }
+
     if (isPending) {
         return <></>;
     }
@@ -281,12 +301,17 @@ function GamePage() {
         );
     }
 
+    const checkedSquares = findCheckedSquares();
+
     // Set square styles
     const selectionColor = "rgba(52, 120, 49, 0.4)";
     const selectionStyle = { backgroundColor: selectionColor };
     const previousMoveStyle = { backgroundColor: "rgba(255, 255, 0, 0.4)" };
     const optionStyle = {
         background: `radial-gradient(circle, ${selectionColor} 25%, transparent 25%)`,
+    };
+    const checkStyle = {
+        background: `radial-gradient(circle, rgb(255, 0, 0) 25%, transparent 90%)`,
     };
 
     const squareStyles: Record<string, CSSProperties> = {
@@ -296,6 +321,9 @@ function GamePage() {
     };
     for (const option of optionSquares) {
         squareStyles[option as string] = optionStyle;
+    }
+    for (const square of checkedSquares) {
+        squareStyles[square as string] = checkStyle;
     }
 
     function canDragPiece({ square }: PieceHandlerArgs) {
