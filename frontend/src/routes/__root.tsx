@@ -25,7 +25,7 @@ const RootLayout = () => {
             <header>
                 <nav>
                     <Link to="/" className="navlink navlink-title">
-                        cress.io
+                        chess dojo
                     </Link>{" "}
                     <Link to="/" className="navlink">
                         PLAY
@@ -47,12 +47,17 @@ const RootLayout = () => {
                     </Link>
                 </nav>
             </header>
-            <WebSocketProvider url={`${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws`}>
+            <WebSocketProvider
+                url={`${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws`}
+            >
                 <div className="app-body">
                     <main className="app-main">
                         <Outlet />
                     </main>
-                    <DebugPanel isOpen={isDebugOpen} onToggle={() => setIsDebugOpen((o) => !o)} />
+                    <DebugPanel
+                        isOpen={isDebugOpen}
+                        onToggle={() => setIsDebugOpen((o) => !o)}
+                    />
                 </div>
             </WebSocketProvider>
             <TanStackRouterDevtools />

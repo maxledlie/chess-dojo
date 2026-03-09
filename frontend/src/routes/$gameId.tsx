@@ -1,14 +1,19 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Input } from "@base-ui/react/input";
 import { Chessboard } from "react-chessboard";
-import type { PieceDropHandlerArgs } from "react-chessboard";
+import type {
+    PieceDataType,
+    PieceDropHandlerArgs,
+    PieceHandlerArgs,
+    SquareHandlerArgs,
+} from "react-chessboard";
 import "./$gameId.css";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Button } from "@base-ui/react/button";
 import { Flag, Undo, X } from "lucide-react";
 import { useGetGame } from "../queries/games";
 import { useWebSocket } from "../components/WebSocketProvider";
-import { Chess } from "chess.js";
+import { Chess, Move, type Piece, type Square } from "chess.js";
 import type { Game } from "../client";
 
 export const Route = createFileRoute("/$gameId")({
@@ -42,14 +47,17 @@ function GamePage() {
     );
     const { data: game, isPending, refetch: refetchGame } = useGetGame(gameId);
 
-    console.log(game);
-
     const navigate = useNavigate({ from: "/$gameId" });
     const [isSearchingOpponent, setIsSearchingOpponent] = useState(false);
 
     const [messages, setMessages] = useState<
         { text: string; isOwn: boolean }[]
     >([]);
+
+    const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
+    const [moveFrom, setMoveFrom] = useState<Square | null>(null);
+    const [moveTo, setMoveTo] = useState<Square | null>(null);
+    const [optionSquares, setOptionSquares] = useState<Square[]>([]);
 
     const chessRef = useRef(new Chess());
     const [fen, setFen] = useState(chessRef.current.fen());
@@ -141,31 +149,106 @@ function GamePage() {
         }
     }, [lastMessage]);
 
-    function handleDrop({
+    /**
+     * @param square
+     * @returns The piece that would be selected by clicking or starting a drag on that square, or null if no
+     * piece would be selected.
+     */
+    function checkSelectable(square: Square): Piece | null {
+        const chess = chessRef.current;
+        const piece = chess.get(square);
+        if (!piece) {
+            return null;
+        }
+        const playerColor = isWhite ? "w" : "b";
+        return piece.color === playerColor ? piece : null;
+    }
+
+    /**
+     * @param square
+     * @returns An array of moves playable starting from that square
+     */
+    function selectSquare(square: Square): Move[] {
+        const chess = chessRef.current;
+        const moves = chess.moves({ square, verbose: true });
+        const options = moves.map((m) => m.to);
+        setSelectedSquare(square);
+        setOptionSquares(options);
+        return moves;
+    }
+
+    function deselectSquare() {
+        setSelectedSquare(null);
+        setOptionSquares([]);
+    }
+
+    function handleSquareClick({ square }: SquareHandlerArgs) {
+        const sq = square as Square;
+
+        // No square selected: select the square if allowed.
+        if (!selectedSquare) {
+            if (checkSelectable(sq)) {
+                selectSquare(sq);
+            }
+            return;
+        }
+
+        // A "from" square is already selected. Try to move the piece to the newly selected square.
+        // If this is not a valid move, either select the new square, or clear selection.
+        const result = localApplyMove(selectedSquare, sq);
+        if (!result) {
+            if (checkSelectable(sq)) {
+                selectSquare(sq);
+            } else {
+                deselectSquare();
+            }
+        }
+    }
+
+    function localApplyMove(from: Square, to: Square): Move | null {
+        const chess = chessRef.current;
+        try {
+            return chess.move({
+                from,
+                to,
+                promotion: "q",
+            });
+        } catch {
+            return null; // illegal locally — snap back
+        }
+    }
+
+    function handlePieceDrag({ square }: PieceHandlerArgs) {
+        const sq = square as Square;
+        if (checkSelectable(sq)) {
+            selectSquare(sq);
+        } else {
+            deselectSquare();
+        }
+    }
+
+    function handlePieceDrop({
         sourceSquare,
         targetSquare,
     }: PieceDropHandlerArgs): boolean {
         if (!targetSquare) return false;
-        const chess = chessRef.current;
-        let result;
-        try {
-            result = chess.move({
-                from: sourceSquare,
-                to: targetSquare,
-                promotion: "q",
-            });
-        } catch {
-            return false; // illegal locally — snap back
+
+        const result = localApplyMove(
+            sourceSquare as Square,
+            targetSquare as Square,
+        );
+        if (!result) {
+            return false;
         }
-        if (!result) return false;
 
         pendingMoveRef.current = result.san;
-        setFen(chess.fen());
+        setFen(chessRef.current.fen());
         sendMessage({
             msg_type: "move_send",
             game_id: gameId,
             move: result.san,
         });
+        deselectSquare();
         return true;
     }
 
@@ -190,6 +273,24 @@ function GamePage() {
         );
     }
 
+    const selectionColor = "rgba(52, 120, 49, 0.4)";
+
+    const squareStyles: Record<string, CSSProperties> = {
+        [selectedSquare as string]: {
+            backgroundColor: selectionColor,
+        },
+    };
+
+    for (const option of optionSquares) {
+        squareStyles[option as string] = {
+            background: `radial-gradient(circle, ${selectionColor} 25%, transparent 25%`,
+        };
+    }
+
+    function canDragPiece({ square }: PieceHandlerArgs) {
+        return !!checkSelectable(square as Square);
+    }
+
     return (
         <div className="game-layout">
             <ChatPanel
@@ -206,7 +307,19 @@ function GamePage() {
                     ]);
                 }}
             />
-            <BoardPanel fen={fen} isWhite={isWhite} onDrop={handleDrop} />
+            <div className="board-panel">
+                <Chessboard
+                    options={{
+                        position: fen,
+                        boardOrientation: isWhite ? "white" : "black",
+                        squareStyles,
+                        canDragPiece,
+                        onSquareClick: handleSquareClick,
+                        onPieceDrag: handlePieceDrag,
+                        onPieceDrop: handlePieceDrop,
+                    }}
+                />
+            </div>
             <MovesPanel
                 game={game}
                 isSearchingOpponent={isSearchingOpponent}
@@ -260,25 +373,6 @@ function ChatPanel({ messages, sendMessage }: ChatPanelProps) {
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={handleKeyDown}
-            />
-        </div>
-    );
-}
-
-interface BoardPanelProps {
-    fen: string;
-    isWhite: boolean;
-    onDrop: (args: PieceDropHandlerArgs) => boolean;
-}
-function BoardPanel({ fen, isWhite, onDrop }: BoardPanelProps) {
-    return (
-        <div className="board-panel">
-            <Chessboard
-                options={{
-                    position: fen,
-                    boardOrientation: isWhite ? "white" : "black",
-                    onPieceDrop: onDrop,
-                }}
             />
         </div>
     );
