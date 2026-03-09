@@ -67,6 +67,20 @@ function GamePage() {
 
     const { sendMessage, lastMessage } = useWebSocket();
 
+    // Reset board state whenever we navigate to a new game.
+    useEffect(() => {
+        const chess = new Chess();
+        chessRef.current = chess;
+        setFen(chess.fen());
+        setPrevMoveFrom(null);
+        setPrevMoveTo(null);
+        setSelectedSquare(null);
+        setOptionSquares([]);
+        setIsSearchingOpponent(false);
+        pendingMoveRef.current = null;
+        initializedRef.current = false;
+    }, [gameId]);
+
     // Initialise board and chat from the server snapshot on first load.
     useEffect(() => {
         if (initializedRef.current || !game) return;
@@ -479,7 +493,7 @@ const MovesPanel = ({
                         <em>{resultLonghand(game.result)}</em>
                     </div>
                     {isSearchingOpponent ? (
-                        <p>Searching...</p>
+                        <p style={{ textAlign: "center" }}>Searching...</p>
                     ) : (
                         <Button
                             className="postgame-button"
