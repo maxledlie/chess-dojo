@@ -10,7 +10,6 @@ const RootLayout = () => {
     useEffect(() => {
         async function init() {
             const sessionUrl = "/api/session";
-            console.log(`Fetching from ${sessionUrl}`);
             const res = await fetch(sessionUrl, { credentials: "include" });
             const data = await res.json();
             sessionStorage.setItem("cress:session-id", data.session_id);
@@ -54,10 +53,12 @@ const RootLayout = () => {
                     <main className="app-main">
                         <Outlet />
                     </main>
-                    <DebugPanel
-                        isOpen={isDebugOpen}
-                        onToggle={() => setIsDebugOpen((o) => !o)}
-                    />
+                    {import.meta.env.DEV && (
+                        <DebugPanel
+                            isOpen={isDebugOpen}
+                            onToggle={() => setIsDebugOpen((o) => !o)}
+                        />
+                    )}
                 </div>
             </WebSocketProvider>
             <TanStackRouterDevtools />
