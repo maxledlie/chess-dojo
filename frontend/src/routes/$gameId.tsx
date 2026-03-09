@@ -2,7 +2,6 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Input } from "@base-ui/react/input";
 import { Chessboard } from "react-chessboard";
 import type {
-    PieceDataType,
     PieceDropHandlerArgs,
     PieceHandlerArgs,
     SquareHandlerArgs,
@@ -55,8 +54,8 @@ function GamePage() {
     >([]);
 
     const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
-    const [moveFrom, setMoveFrom] = useState<Square | null>(null);
-    const [moveTo, setMoveTo] = useState<Square | null>(null);
+    const [prevMoveFrom, setPrevMoveFrom] = useState<Square | null>(null);
+    const [prevMoveTo, setPrevMoveTo] = useState<Square | null>(null);
     const [optionSquares, setOptionSquares] = useState<Square[]>([]);
 
     const chessRef = useRef(new Chess());
@@ -195,8 +194,10 @@ function GamePage() {
 
         // A "from" square is already selected. Try to move the piece to the newly selected square.
         // If this is not a valid move, either select the new square, or clear selection.
-        const result = localApplyMove(selectedSquare, sq);
-        if (!result) {
+        const move = localApplyMove(selectedSquare, sq);
+        if (move) {
+            commitMove(move);
+        } else {
             if (checkSelectable(sq)) {
                 selectSquare(sq);
             } else {
@@ -233,23 +234,28 @@ function GamePage() {
     }: PieceDropHandlerArgs): boolean {
         if (!targetSquare) return false;
 
-        const result = localApplyMove(
+        const move = localApplyMove(
             sourceSquare as Square,
             targetSquare as Square,
         );
-        if (!result) {
+        if (!move) {
             return false;
         }
+        commitMove(move);
+        return true;
+    }
 
-        pendingMoveRef.current = result.san;
+    function commitMove(move: Move) {
+        pendingMoveRef.current = move.san;
         setFen(chessRef.current.fen());
         sendMessage({
             msg_type: "move_send",
             game_id: gameId,
-            move: result.san,
+            move: move.san,
         });
+        setPrevMoveFrom(move.from);
+        setPrevMoveTo(move.to);
         deselectSquare();
-        return true;
     }
 
     if (isPending) {
@@ -273,18 +279,21 @@ function GamePage() {
         );
     }
 
+    // Set square styles
     const selectionColor = "rgba(52, 120, 49, 0.4)";
-
-    const squareStyles: Record<string, CSSProperties> = {
-        [selectedSquare as string]: {
-            backgroundColor: selectionColor,
-        },
+    const selectionStyle = { backgroundColor: selectionColor };
+    const previousMoveStyle = { backgroundColor: "rgba(255, 255, 0, 0.4)" };
+    const optionStyle = {
+        background: `radial-gradient(circle, ${selectionColor} 25%, transparent 25%)`,
     };
 
+    const squareStyles: Record<string, CSSProperties> = {
+        [selectedSquare as string]: selectionStyle,
+        [prevMoveFrom as string]: previousMoveStyle,
+        [prevMoveTo as string]: previousMoveStyle,
+    };
     for (const option of optionSquares) {
-        squareStyles[option as string] = {
-            background: `radial-gradient(circle, ${selectionColor} 25%, transparent 25%`,
-        };
+        squareStyles[option as string] = optionStyle;
     }
 
     function canDragPiece({ square }: PieceHandlerArgs) {
