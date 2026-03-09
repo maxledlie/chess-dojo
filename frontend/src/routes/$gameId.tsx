@@ -133,7 +133,9 @@ function GamePage() {
                     } else {
                         // Opponent's move — apply it now.
                         try {
-                            chessRef.current.move(data.move);
+                            const move = chessRef.current.move(data.move);
+                            setPrevMoveFrom(move.from);
+                            setPrevMoveTo(move.to);
                         } catch {}
                         setFen(chessRef.current.fen());
                     }
