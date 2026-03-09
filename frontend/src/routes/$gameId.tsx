@@ -110,7 +110,6 @@ function GamePage() {
             return;
         }
 
-        console.log("Message received", lastMessage.data);
         const msg = JSON.parse(lastMessage.data).data;
         switch (msg.msg_type) {
             case "chat_receive": {
