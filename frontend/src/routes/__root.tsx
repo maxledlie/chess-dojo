@@ -26,24 +26,6 @@ const RootLayout = () => {
                     <Link to="/" className="navlink navlink-title">
                         chess dojo
                     </Link>{" "}
-                    <Link to="/" className="navlink">
-                        PLAY
-                    </Link>
-                    <Link to="/training" className="navlink">
-                        PUZZLES
-                    </Link>
-                    <Link to="/learn" className="navlink">
-                        LEARN
-                    </Link>
-                    <Link to="/broadcast" className="navlink">
-                        WATCH
-                    </Link>
-                    <Link to="/player" className="navlink">
-                        COMMUNITY
-                    </Link>
-                    <Link to="/analysis" className="navlink">
-                        TOOLS
-                    </Link>
                 </nav>
             </header>
             <WebSocketProvider
@@ -53,7 +35,7 @@ const RootLayout = () => {
                     <main className="app-main">
                         <Outlet />
                     </main>
-                    {import.meta.env.DEV && (
+                    {false && (
                         <DebugPanel
                             isOpen={isDebugOpen}
                             onToggle={() => setIsDebugOpen((o) => !o)}
