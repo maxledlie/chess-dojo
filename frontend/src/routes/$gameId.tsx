@@ -344,22 +344,8 @@ function GamePage() {
     }
 
     return (
-        <div className="game-layout">
-            <ChatPanel
-                messages={messages}
-                sendMessage={(m) => {
-                    sendMessage({
-                        msg_type: "chat_send",
-                        game_id: gameId,
-                        message: m,
-                    });
-                    setMessages((messages) => [
-                        ...messages,
-                        { text: m, isOwn: true },
-                    ]);
-                }}
-            />
-            <div className="board-panel">
+        <div className="layout">
+            <section className="pane pane-game">
                 <Chessboard
                     options={{
                         position: fen,
@@ -371,18 +357,36 @@ function GamePage() {
                         onPieceDrop: handlePieceDrop,
                     }}
                 />
-            </div>
-            <MovesPanel
-                game={game}
-                isSearchingOpponent={isSearchingOpponent}
-                onFindNewOpponent={() => {
-                    sendMessage({
-                        msg_type: "game_request",
-                        time_control: "blitz_5p0",
-                    });
-                    setIsSearchingOpponent(true);
-                }}
-            />
+            </section>
+            <section className="pane pane-chat">
+                <ChatPanel
+                    messages={messages}
+                    sendMessage={(m) => {
+                        sendMessage({
+                            msg_type: "chat_send",
+                            game_id: gameId,
+                            message: m,
+                        });
+                        setMessages((messages) => [
+                            ...messages,
+                            { text: m, isOwn: true },
+                        ]);
+                    }}
+                />
+            </section>
+            <section className="pane pane-moves">
+                <MovesPanel
+                    game={game}
+                    isSearchingOpponent={isSearchingOpponent}
+                    onFindNewOpponent={() => {
+                        sendMessage({
+                            msg_type: "game_request",
+                            time_control: "blitz_5p0",
+                        });
+                        setIsSearchingOpponent(true);
+                    }}
+                />
+            </section>
         </div>
     );
 }

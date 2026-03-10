@@ -1,22 +1,64 @@
+/**
+Layout rules:
+    - The board should always be square.
+    - The board should take up as much space as possible, up to a maximum limit specified in inches.
+    - Where possible, the chat pane should be positioned to the left of the board and the move pane to the right.
+    - On small screens in portrait orientation, the board, moves and chat can be stacked vertically instead.
+    - On small screens in landscape orientation, the chat may be hidden: board to the left and moves to the right.
+*/
 :root {
-    --min-sidebar-width: 300px;
+    --max-board-size: 7in;
+    --sidebar-width: 3in;
+    --surface: white;
+    --gap: clamp(8px, 1.5vw, 16px);
 }
 
-.game-layout {
-    --board-size: min(90vh, calc(100cqw - 2 * var(--min-sidebar-width)));
-    --sidebar-width: calc(0.4 * (100cqw - var(--board-size)));
+.layout {
+    display: grid;
+    gap: var(--gap);
+    padding: var(--gap);
+    justify-items: center;
+    align-items: stretch;
+    grid-template-columns: 1fr;
+    grid-template-areas:
+        "game"
+        "moves"
+        "chat";
+}
 
+@media (min-width: 800px) {
+    .layout {
+        grid-template-columns: var(--sidebar-width) fit-content(var(--max-board-size)) var(--sidebar-width);
+        grid-template-areas: "chat game moves";
+        justify-content: center;
+        margin: 0 auto;
+    }
+}
+
+.pane {
+    background: var(--surface);
     display: flex;
-    flex-direction: row;
-    justify-content: center;
-    max-height: 90vh;
+    flex-direction: column;
+}
+
+.pane-game {
+    grid-area: game;
+    max-width: var(--max-board-size);
+    aspect-ratio: 1;
+}
+
+.pane-moves {
+    grid-area: moves;
+}
+
+.pane-chat {
+    grid-area: chat;
 }
 
 .chat-panel {
-    background-color: white;
     display: flex;
+    flex: 1;
     flex-direction: column;
-    width: var(--sidebar-width);
     padding-right: 20px;
     overflow: hidden;
 }
@@ -43,19 +85,15 @@
     border-left-color: #ff9800;
 }
 
-.board-panel {
-    width: var(--board-size);
-    height: var(--board-size);
-}
-
 .move-panel {
+    flex: 1;
     background-color: white;
-    max-height: 90vh;
-    width: var(--sidebar-width);
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: stretch;
+    overflow: hidden;
+    width: var(--sidebar-width);
 }
 
 .results-panel {
@@ -68,7 +106,7 @@
 
 .game-actions {
     display: flex;
-    gap: 30px;
+    gap: clamp(8px, 4cqw, 30px);
     flex-direction: row;
     justify-content: center;
 }
