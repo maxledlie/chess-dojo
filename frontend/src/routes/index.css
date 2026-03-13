@@ -4,3 +4,14 @@
     align-items: center;
     justify-content: center;
 }
+
+.server-stats {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 16px;
+    font-size: 0.9rem;
+    color: #888;
+}
