@@ -22,6 +22,9 @@ type WebSocketContextValue = {
     sendMessage: (data: any) => void;
     lastMessage: MessageEvent | null;
     messages: WsLogEntry[];
+    pingMillis: number;
+    playerCount: number;
+    gameCount: number;
 };
 
 export const WebSocketContext = createContext<WebSocketContextValue | null>(
@@ -102,13 +105,12 @@ export default function WebSocketProvider({
         ws.onmessage = (evt) => {
             const payload = JSON.parse(evt.data).data;
             if (payload.msg_type === "pong") {
-                const payload = evt.data.data;
                 const recvTime = Date.now();
                 if (lastPingTime.current > 0) {
                     setPingMillis(recvTime - lastPingTime.current);
                 }
-                setPlayerCount(payload.player_count);
-                setGameCount(payload.game_count);
+                setPlayerCount(payload.players);
+                setGameCount(payload.games);
             } else {
                 setLastMessage(evt);
                 logMessage({

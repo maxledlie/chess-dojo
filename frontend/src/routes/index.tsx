@@ -18,7 +18,8 @@ function Index() {
     const [isWaiting, setIsWaiting] = useState<boolean>(false);
     const navigate = useNavigate({ from: "/" });
 
-    const { sendMessage, lastMessage, playerCount, gameCount } = useWebSocket();
+    const { sendMessage, lastMessage, pingMillis, playerCount, gameCount } =
+        useWebSocket();
 
     useEffect(() => {
         if (!lastMessage) {
@@ -60,6 +61,11 @@ function Index() {
                     Play!
                 </Button>
             )}
+            <div className="server-stats">
+                <span>{`${playerCount} online`}</span>
+                <span>{`${gameCount} games`}</span>
+                <span>{`ping: ${pingMillis}ms`}</span>
+            </div>
         </div>
     );
 }
