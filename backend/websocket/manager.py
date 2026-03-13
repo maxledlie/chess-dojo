@@ -1,7 +1,10 @@
 import asyncio
 
+import structlog
 from fastapi import WebSocket
 from websocket.models import Message, MessagePayload
+
+logger = structlog.get_logger()
 
 
 class ConnectionManager:
@@ -10,11 +13,13 @@ class ConnectionManager:
 
     async def connect(self, session_id: str, websocket: WebSocket):
         await websocket.accept()
+        logger.info("Websocket connection established", session_id=session_id)
         queue = asyncio.Queue()
         self._clients[session_id] = (websocket, queue)
         return queue
 
     def disconnect(self, session_id: str):
+        logger.info("Websocket connection lost", session_id=session_id)
         del self._clients[session_id]
 
     async def send_to(self, session_id: str, message: MessagePayload):

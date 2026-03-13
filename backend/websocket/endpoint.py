@@ -83,6 +83,8 @@ async def websocket_endpoint(ws: WebSocket):
             consumer_loop(state, session_id, ws),
             producer_loop(outgoing, session_id, ws),
         )
+    except WebSocketDisconnect:
+        pass
     finally:
         state.manager.disconnect(session_id)
 
@@ -121,9 +123,6 @@ async def consumer_loop(state: AppState, session_id: str, ws: WebSocket):
                 "Received invalid JSON through websocket", exc_info=e, msg=e.msg
             )
             break
-        except WebSocketDisconnect:
-            break
-
         try:
             msg = Message.model_validate(data)
             await consume(state, session_id, msg)
