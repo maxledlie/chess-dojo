@@ -31,6 +31,9 @@ from websocket.models import (
     Message,
     MoveResultMsg,
     MoveSendMsg,
+    PingMsg,
+    PongMsg,
+    msg_log_level,
 )
 from guest_auth import get_session_id_from_ws
 from app_state import AppState
@@ -87,8 +90,10 @@ async def websocket_endpoint(ws: WebSocket):
 async def consume(state: AppState, session_id: str, msg: Message):
     data = msg.data
     try:
-        logger.info("Received message", **data.model_dump())
+        logger.log(msg_log_level(msg.data), "Received message", **data.model_dump())
         match data.msg_type:
+            case "ping":
+                await handle_ping(state, session_id, data)
             case "game_request":
                 await handle_game_request(state, session_id, data)
             case "game_resign":
@@ -123,19 +128,23 @@ async def consumer_loop(state: AppState, session_id: str, ws: WebSocket):
             msg = Message.model_validate(data)
             await consume(state, session_id, msg)
         except ValidationError:
-            logger.info("Invalid message sent to websocket", msg=data)
-            raise HTTPException(HTTPStatus.BAD_REQUEST)
+            logger.info("Invalid message sent to websocket. Ignoring.", msg=data)
 
 
 async def producer_loop(queue: asyncio.Queue[Message], session_id: str, ws: WebSocket):
     try:
         while True:
             msg = await queue.get()
-            logger.info("Sending message", **msg.model_dump())
+            logger.log(msg_log_level(msg.data), "Sending message", **msg.model_dump())
             await ws.send_text(msg.model_dump_json())
     except Exception as e:
         logger.error("Unexpected error sending message", exc_info=e)
         raise
+
+
+async def handle_ping(state: AppState, session_id: str, msg: PingMsg):
+    cm = state.manager
+    await cm.send_to(session_id, PongMsg(players=cm.player_count, games=0))
 
 
 async def handle_game_request(state: AppState, session_id: str, msg: GameRequestMsg):
@@ -198,7 +207,7 @@ async def handle_game_resign(state: AppState, session_id: str, msg: GameResignMs
 
     completion_msg = GameCompleteMsg(game_id=msg.game_id, result=winner.value)
     for sid in [game.white_id, game.black_id]:
-        await state.manager.send_to(sid, Message(data=completion_msg))
+        await state.manager.send_to(sid, completion_msg)
 
 
 async def handle_chat_send(state: AppState, session_id: str, msg: ChatSendMsg):
@@ -221,9 +230,7 @@ async def handle_chat_send(state: AppState, session_id: str, msg: ChatSendMsg):
         msg.game_id,
         ChatMessage(player_id=session_id, timestamp=timestamp, content=msg.message),
     )
-    outgoing_msg = Message(
-        data=ChatReceiveMsg(timestamp=timestamp, message=msg.message)
-    )
+    outgoing_msg = ChatReceiveMsg(timestamp=timestamp, message=msg.message)
     await state.manager.send_to(receiver_session_id, outgoing_msg)
 
 
@@ -264,8 +271,8 @@ async def handle_move(state: AppState, session_id: str, msg: MoveSendMsg):
             msg.game_id, validation.san
         )
         opponent_id = game.black_id if is_white else game.white_id
-        move_msg = Message(
-            data=MoveResultMsg(game_id=msg.game_id, accepted=True, move=validation.san)
+        move_msg = MoveResultMsg(
+            game_id=msg.game_id, accepted=True, move=validation.san
         )
         await state.manager.send_to(session_id, move_msg)
         await state.manager.send_to(opponent_id, move_msg)
@@ -275,17 +282,13 @@ async def handle_move(state: AppState, session_id: str, msg: MoveSendMsg):
                 result_str = "draw"
             else:
                 result_str = terminal_result.winner.value
-            completion_msg = Message(
-                data=GameCompleteMsg(game_id=msg.game_id, result=result_str)
-            )
+            completion_msg = GameCompleteMsg(game_id=msg.game_id, result=result_str)
             for sid in [game.white_id, game.black_id]:
                 await state.manager.send_to(sid, completion_msg)
     else:
         await state.manager.send_to(
             session_id,
-            Message(
-                data=MoveResultMsg(
-                    game_id=msg.game_id, accepted=False, reason=validation.reason
-                )
+            MoveResultMsg(
+                game_id=msg.game_id, accepted=False, reason=validation.reason
             ),
         )

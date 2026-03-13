@@ -18,7 +18,7 @@ function Index() {
     const [isWaiting, setIsWaiting] = useState<boolean>(false);
     const navigate = useNavigate({ from: "/" });
 
-    const { sendMessage, lastMessage } = useWebSocket();
+    const { sendMessage, lastMessage, playerCount, gameCount } = useWebSocket();
 
     useEffect(() => {
         if (!lastMessage) {
@@ -29,7 +29,10 @@ function Index() {
         switch (msg.msg_type) {
             case "game_begin": {
                 const data: GameBeginData = msg;
-                sessionStorage.setItem(`cress:game-color:${data.game_id}`, String(data.you_are_white));
+                sessionStorage.setItem(
+                    `cress:game-color:${data.game_id}`,
+                    String(data.you_are_white),
+                );
                 navigate({
                     to: "/$gameId",
                     params: { gameId: data.game_id },
