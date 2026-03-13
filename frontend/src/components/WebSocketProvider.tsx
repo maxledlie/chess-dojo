@@ -47,9 +47,15 @@ export default function WebSocketProvider({
     // Store messages in an in-memory queue until socket is open
     const sendQueueRef = useRef<string[]>([]);
 
+    // Track time of last send ping message
+    const lastPingTime = useRef<number>(-1);
+
     const [status, setStatus] = useState<WSStatus>("idle");
     const [lastMessage, setLastMessage] = useState<MessageEvent | null>(null);
     const [messages, setMessages] = useState<WsLogEntry[]>([]);
+    const [pingMillis, setPingMillis] = useState<number>(0);
+    const [playerCount, setPlayerCount] = useState<number>(0);
+    const [gameCount, setGameCount] = useState<number>(0);
 
     const logMessage = useCallback((entry: WsLogEntry) => {
         setMessages((prev) => {
@@ -69,7 +75,6 @@ export default function WebSocketProvider({
         // Prevent creation of duplicate web socket connections.
         // For example, without this check, React Strict Mode will create two connections,
         // one for each invocation of the below `useEffect` hook.
-
         const existing = wsRef.current;
         if (
             existing &&
@@ -93,10 +98,25 @@ export default function WebSocketProvider({
             for (const msg of q) {
                 ws.send(msg);
             }
-        }
+        };
         ws.onmessage = (evt) => {
-            setLastMessage(evt);
-            logMessage({ direction: "received", timestamp: new Date(), raw: evt.data });
+            const payload = JSON.parse(evt.data).data;
+            if (payload.msg_type === "pong") {
+                const payload = evt.data.data;
+                const recvTime = Date.now();
+                if (lastPingTime.current > 0) {
+                    setPingMillis(recvTime - lastPingTime.current);
+                }
+                setPlayerCount(payload.player_count);
+                setGameCount(payload.game_count);
+            } else {
+                setLastMessage(evt);
+                logMessage({
+                    direction: "received",
+                    timestamp: new Date(),
+                    raw: evt.data,
+                });
+            }
         };
         ws.onerror = () => setStatus("error");
 
@@ -117,8 +137,23 @@ export default function WebSocketProvider({
         // Close the connection when app unloads or provider unmounts
         wsRef.current?.close(1000, "Provider unmounted");
         wsRef.current = null;
+
+        // Periodically send `ping` messages to the server
+        const pingIntervalId = window.setInterval(() => {
+            const sendTime = sendMessage({ msg_type: "ping" });
+            lastPingTime.current = sendTime;
+        }, 2500);
+
+        return () => {
+            window.clearInterval(pingIntervalId);
+        };
     }, [connect]);
 
+    /**
+     * Sends a provided message to the server over the active websocket, or appends to a local queue
+     * if websocket not yet established. Returns the timestamp at which the message was sent or enqueued.
+     * @param message The message to send to the server, as a JSON object.
+     */
     const sendMessage = useCallback(
         (message: any) => {
             const ws = wsRef.current;
@@ -128,19 +163,37 @@ export default function WebSocketProvider({
                 logMessage({ direction: "sent", timestamp: new Date(), raw });
                 sendQueueRef.current.push(raw);
                 connect();
-                return;
+                return Date.now();
             }
 
             const raw = JSON.stringify({ data: message });
             logMessage({ direction: "sent", timestamp: new Date(), raw });
+            const sendTime = Date.now();
             ws.send(raw);
+            return sendTime;
         },
         [connect, logMessage],
     );
 
     const value = useMemo(
-        () => ({ status, sendMessage, lastMessage, messages }),
-        [status, sendMessage, lastMessage, messages],
+        () => ({
+            status,
+            sendMessage,
+            lastMessage,
+            messages,
+            pingMillis,
+            playerCount,
+            gameCount,
+        }),
+        [
+            status,
+            sendMessage,
+            lastMessage,
+            messages,
+            pingMillis,
+            playerCount,
+            gameCount,
+        ],
     );
 
     return (

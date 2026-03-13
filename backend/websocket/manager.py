@@ -1,7 +1,7 @@
 import asyncio
 
 from fastapi import WebSocket
-from websocket.models import Message
+from websocket.models import Message, MessagePayload
 
 
 class ConnectionManager:
@@ -17,8 +17,12 @@ class ConnectionManager:
     def disconnect(self, session_id: str):
         del self._clients[session_id]
 
-    async def send_to(self, session_id: str, message: Message):
+    async def send_to(self, session_id: str, message: MessagePayload):
         if session_id not in self._clients:
             return
         (_, q) = self._clients[session_id]
-        await q.put(message)
+        await q.put(Message(data=message))
+
+    @property
+    def player_count(self):
+        return len(self._clients.keys())

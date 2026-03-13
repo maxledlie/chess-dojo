@@ -60,10 +60,10 @@ async def _handle_match(state: AppState, fields: dict):
 
     await state.manager.send_to(
         session_a,
-        Message(data=GameBeginMsg(you_are_white=True, game_id=game_id)),
+        GameBeginMsg(you_are_white=True, game_id=game_id),
     )
     await state.manager.send_to(
         session_b,
-        Message(data=GameBeginMsg(you_are_white=False, game_id=game_id)),
+        GameBeginMsg(you_are_white=False, game_id=game_id),
     )
     logger.info("Game started", game_id=game_id, white=session_a, black=session_b)
