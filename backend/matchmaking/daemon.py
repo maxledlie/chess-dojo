@@ -5,12 +5,10 @@ import string
 import structlog
 from shared.redis import (
     MM_MATCHES_STREAM,
-    queued_key,
-    request_hash_key,
-    waiting_zset_key,
     redis_client,
 )
 
+from matchmaking.game_request_store import GameRequestStore, RedisGameRequestStore
 from shared.utils import now_ms
 
 
@@ -21,9 +19,10 @@ POLL_INTERVAL_S = 0.5
 
 async def _amain(daemon_id: str):
     async with redis_client() as rc:
+        store = RedisGameRequestStore(rc)
         while True:
             try:
-                await _poll_and_match(rc)
+                await _poll_and_match(rc, store)
                 await asyncio.sleep(POLL_INTERVAL_S)
             except asyncio.CancelledError:
                 raise
@@ -32,35 +31,20 @@ async def _amain(daemon_id: str):
                 await asyncio.sleep(POLL_INTERVAL_S)
 
 
-async def _poll_and_match(rc):
+async def _poll_and_match(rc, store: GameRequestStore):
     tc_keys = await rc.keys("mm:wait:*")
     for tc_key in tc_keys:
         time_control = tc_key[len("mm:wait:"):]
-        members = await rc.zrange(tc_key, 0, -1)  # oldest first
+        valid = await store.list_requests(time_control)
 
-        # Validate; prune stale entries (queued key expired but ZSET entry remains)
-        valid = []
-        for session_id in members:
-            if await rc.exists(queued_key(session_id)):
-                valid.append(session_id)
-            else:
-                await rc.zrem(tc_key, session_id)
-                logger.info("Pruned stale queue entry", session_id=session_id)
-
-        # Match in FIFO pairs
         while len(valid) >= 2:
             session_a = valid.pop(0)
             session_b = valid.pop(0)
             game_id = generate_game_id()
 
-            pipe = rc.pipeline()
-            pipe.zrem(tc_key, session_a, session_b)
-            pipe.delete(queued_key(session_a), queued_key(session_b))
-            pipe.delete(
-                request_hash_key(time_control, session_a),
-                request_hash_key(time_control, session_b),
-            )
-            pipe.xadd(
+            await store.cancel_request(session_a)
+            await store.cancel_request(session_b)
+            await rc.xadd(
                 MM_MATCHES_STREAM,
                 fields={
                     "session_a": session_a,
@@ -72,7 +56,6 @@ async def _poll_and_match(rc):
                 maxlen=10_000,
                 approximate=True,
             )
-            await pipe.execute()
             logger.info("Created match", game_id=game_id, session_a=session_a, session_b=session_b)
 
 
