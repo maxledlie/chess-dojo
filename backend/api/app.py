@@ -13,6 +13,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from app_state import AppState
 from models import Game, SessionResponse
+from matchmaking.game_request_store import RedisGameRequestStore
 from shared.game_store import RedisGameStore
 from http import HTTPStatus
 from guest_auth import ensure_guest_session
@@ -51,7 +52,11 @@ def create_app(api_instance_id: str) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         async with redis_client() as rc:
-            app.state.state = AppState(redis=rc, game_store=RedisGameStore(rc))
+            app.state.state = AppState(
+                redis=rc,
+                game_store=RedisGameStore(rc),
+                game_request_store=RedisGameRequestStore(rc),
+            )
             task = asyncio.create_task(
                 matches_consumer(app.state.state, api_instance_id)
             )
