@@ -32,6 +32,26 @@ class GameRequestStore(ABC):
         pass
 
 
+class MemoryGameRequestStore(GameRequestStore):
+    def __init__(self):
+        self._requests: dict[str, str] = {}  # session_id → time_control
+
+    async def register_request(self, session_id: str, time_control: str) -> bool:
+        if session_id in self._requests:
+            return False
+        self._requests[session_id] = time_control
+        return True
+
+    async def cancel_request(self, session_id: str) -> bool:
+        if session_id not in self._requests:
+            return False
+        del self._requests[session_id]
+        return True
+
+    async def list_requests(self, time_control: str) -> list[str]:
+        return [sid for sid, tc in self._requests.items() if tc == time_control]
+
+
 class RedisGameRequestStore(GameRequestStore):
     def __init__(self, rc: redis.Redis):
         self._rc = rc

@@ -198,6 +198,13 @@ async def handle_move(state: AppState, session_id: str, msg: MoveSendMsg):
     if session_id not in (game.white_id, game.black_id):
         return
 
+    if game.result is not None:
+        await state.manager.send_to(
+            session_id,
+            MoveResultMsg(game_id=msg.game_id, accepted=False, reason="Game is over"),
+        )
+        return
+
     try:
         terminal_result = await state.game_store.append_move(msg.game_id, msg.move)
     except (
