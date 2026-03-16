@@ -190,27 +190,6 @@ async def handle_chat_send(state: AppState, session_id: str, msg: ChatSendMsg):
     await state.manager.send_to(receiver_session_id, outgoing_msg)
 
 
-def _validate_move(moves: list[str], move_san: str, is_white: bool) -> MoveValidation:
-    board = pychess.Board()
-    for m in moves:
-        board.push_san(m)
-
-    if (board.turn == pychess.WHITE) != is_white:
-        return MoveValidation(accepted=False, reason="Not your turn")
-
-    try:
-        move = board.parse_san(move_san)
-        san = board.san(move)  # normalise to canonical SAN
-        return MoveValidation(accepted=True, san=san)
-    except (
-        ValueError,
-        pychess.InvalidMoveError,
-        pychess.IllegalMoveError,
-        pychess.AmbiguousMoveError,
-    ):
-        return MoveValidation(accepted=False, reason="Illegal move")
-
-
 async def handle_move(state: AppState, session_id: str, msg: MoveSendMsg):
     game = await state.game_store.get_game(msg.game_id)
     if game is None:
@@ -219,32 +198,32 @@ async def handle_move(state: AppState, session_id: str, msg: MoveSendMsg):
     if session_id not in (game.white_id, game.black_id):
         return
 
-    is_white = session_id == game.white_id
-    validation = _validate_move(game.moves, msg.move, is_white)
-
-    if validation.accepted and validation.san:
-        terminal_result = await state.game_store.append_move(
-            msg.game_id, validation.san
-        )
-        opponent_id = game.black_id if is_white else game.white_id
-        move_msg = MoveResultMsg(
-            game_id=msg.game_id, accepted=True, move=validation.san
-        )
-        await state.manager.send_to(session_id, move_msg)
-        await state.manager.send_to(opponent_id, move_msg)
-
-        if terminal_result is not None:
-            if isinstance(terminal_result, (Stalemate, Draw)):
-                result_str = "draw"
-            else:
-                result_str = terminal_result.winner.value
-            completion_msg = GameCompleteMsg(game_id=msg.game_id, result=result_str)
-            for sid in [game.white_id, game.black_id]:
-                await state.manager.send_to(sid, completion_msg)
-    else:
+    try:
+        terminal_result = await state.game_store.append_move(msg.game_id, msg.move)
+    except (
+        ValueError,
+        pychess.IllegalMoveError,
+        pychess.InvalidMoveError,
+        pychess.AmbiguousMoveError,
+    ):
+        # TODO: Provide more specific reason for why move is not accepted
         await state.manager.send_to(
             session_id,
-            MoveResultMsg(
-                game_id=msg.game_id, accepted=False, reason=validation.reason
-            ),
+            MoveResultMsg(game_id=msg.game_id, accepted=False, reason="Illegal move"),
         )
+        return
+
+    # Send move confirmation messages to both players
+    move_msg = MoveResultMsg(game_id=msg.game_id, accepted=True, move=msg.move)
+    for sid in [game.white_id, game.black_id]:
+        await state.manager.send_to(sid, move_msg)
+
+    # Send game completion message to both players if appropriate
+    if terminal_result is not None:
+        if isinstance(terminal_result, (Stalemate, Draw)):
+            result_str = "draw"
+        else:
+            result_str = terminal_result.winner.value
+        completion_msg = GameCompleteMsg(game_id=msg.game_id, result=result_str)
+        for sid in [game.white_id, game.black_id]:
+            await state.manager.send_to(sid, completion_msg)

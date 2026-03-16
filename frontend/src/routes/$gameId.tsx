@@ -86,7 +86,7 @@ function GamePage() {
         if (initializedRef.current || !game) return;
         initializedRef.current = true;
 
-        const chess = new Chess();
+        const chess = new Chess(game.starting_fen ?? undefined);
         for (const san of game.moves ?? []) {
             try {
                 chess.move(san);
