@@ -4,9 +4,10 @@ import redis.asyncio as redis
 import structlog
 
 from app_state import AppState
-from models import Game
+from models import Game, STANDARD_FEN
+from shared.positions import get_todays_position
 from shared.redis import MM_MATCHES_GROUP, MM_MATCHES_STREAM
-from websocket.models import GameBeginMsg, Message
+from websocket.models import GameBeginMsg
 
 logger = structlog.get_logger()
 
@@ -54,8 +55,10 @@ async def _handle_match(state: AppState, fields: dict):
     session_b = fields["session_b"]
     game_id = fields["game_id"]
 
+    pos = get_todays_position()
+    starting_fen = pos["fen"] if pos else STANDARD_FEN
     await state.game_store.create_game(
-        game_id, Game(white_id=session_a, black_id=session_b)
+        game_id, Game(white_id=session_a, black_id=session_b, starting_fen=starting_fen)
     )
 
     await state.manager.send_to(

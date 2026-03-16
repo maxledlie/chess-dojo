@@ -55,6 +55,8 @@ class Draw(BaseModel):
 
 GameResult = Union[Mate, Resign, Stalemate, ClockFlag, Draw]
 
+STANDARD_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+
 
 class Game(BaseModel):
     white_id: str
@@ -62,3 +64,4 @@ class Game(BaseModel):
     moves: list[str] = []
     chat: list[ChatMessage] = []
     result: GameResult | None = Field(default=None, discriminator="result_type")
+    starting_fen: str = STANDARD_FEN

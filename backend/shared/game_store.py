@@ -5,15 +5,29 @@ import chess as pychess
 import redis.asyncio as redis
 from pydantic import TypeAdapter
 
-from models import ChatMessage, ClockFlag, Color, Draw, DrawReason, Game, GameResult, Mate, Resign, Stalemate
+from models import (
+    ChatMessage,
+    ClockFlag,
+    Color,
+    Draw,
+    DrawReason,
+    Game,
+    GameResult,
+    Mate,
+    Resign,
+    Stalemate,
+    STANDARD_FEN,
+)
 
 _result_adapter: TypeAdapter[GameResult] = TypeAdapter(GameResult)
 
 
-def _result_from_moves(moves: list[str]) -> GameResult | None:
-    board = pychess.Board()
-    for m in moves:
+def _test_move(game: Game, move_san: str) -> GameResult | None:
+    board = pychess.Board(game.starting_fen)
+
+    for m in [*game.moves, move_san]:
         board.push_san(m)
+
     outcome = board.outcome()
     if outcome is None:
         return None
@@ -53,7 +67,6 @@ class GameStore(ABC):
         fivefold repetition). Returns the terminal GameResult, or None if the game
         continues. For all other termination conditions use the explicit end_by_*
         methods below."""
-        ...
 
     @abstractmethod
     async def append_chat(self, game_id: str, msg: ChatMessage) -> None: ...
@@ -96,6 +109,7 @@ class RedisGameStore(GameStore):
         mapping: dict[str, str] = {
             "white_id": game.white_id,
             "black_id": game.black_id,
+            "starting_fen": game.starting_fen,
         }
         if game.result is not None:
             mapping["result"] = game.result.model_dump_json()
@@ -119,14 +133,21 @@ class RedisGameStore(GameStore):
             result=_result_adapter.validate_json(result_raw) if result_raw else None,
             moves=moves,
             chat=chat,
+            starting_fen=meta.get("starting_fen", STANDARD_FEN),
         )
 
     async def get_moves(self, game_id: str) -> list[str]:
         return await self._rc.lrange(_moves_key(game_id), 0, -1)
 
     async def append_move(self, game_id: str, san: str) -> GameResult | None:
-        current_moves = await self._rc.lrange(_moves_key(game_id), 0, -1)
-        result = _result_from_moves(current_moves + [san])
+        # Fetch current game state from Redis store
+        game = await self.get_game(game_id)
+        if game is None:
+            raise Exception(f"Game {game_id} not found")
+
+        # Apply move in rules engine. This will raise an exception if move not legal.
+        result = _test_move(game, san)
+
         pipe = self._rc.pipeline()
         pipe.rpush(_moves_key(game_id), san)
         if result is not None:
@@ -138,7 +159,9 @@ class RedisGameStore(GameStore):
         await self._rc.rpush(_chat_key(game_id), msg.model_dump_json())
 
     async def _set_result(self, game_id: str, result: GameResult) -> None:
-        await self._rc.hset(_game_key(game_id), mapping={"result": result.model_dump_json()})
+        await self._rc.hset(
+            _game_key(game_id), mapping={"result": result.model_dump_json()}
+        )
 
     async def end_by_resignation(self, game_id: str, winner: Color) -> None:
         await self._set_result(game_id, Resign(winner=winner))
@@ -180,7 +203,7 @@ class MemoryGameStore(GameStore):
         if game is None:
             return None
         game.moves.append(san)
-        result = _result_from_moves(game.moves)
+        result = _test_move(game, san)
         if result is not None:
             game.result = result
         return result

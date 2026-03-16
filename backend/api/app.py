@@ -10,9 +10,11 @@ from fastapi import (
     Request,
     Response,
 )
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from app_state import AppState
 from models import Game, SessionResponse
+from shared.positions import get_todays_position
 from matchmaking.game_request_store import RedisGameRequestStore
 from shared.game_store import RedisGameStore
 from http import HTTPStatus
@@ -34,6 +36,21 @@ logger = structlog.get_logger()
 )
 async def ensure_session(request: Request, response: Response):
     return ensure_guest_session(request, response)
+
+
+class DailyPositionResponse(BaseModel):
+    date: str
+    fen: str
+    summary: str
+
+
+@router.get("/position/today", operation_id="get_todays_position")
+async def get_todays_position_endpoint() -> DailyPositionResponse:
+    import datetime
+    pos = get_todays_position()
+    if pos is None:
+        raise HTTPException(404, "No position for today")
+    return DailyPositionResponse(date=datetime.date.today().isoformat(), fen=pos["fen"], summary=pos["summary"])
 
 
 @router.get("/{game_id}", operation_id="get_game", response_model_exclude={"white_id", "black_id"})
