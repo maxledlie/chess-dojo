@@ -113,7 +113,7 @@ class RedisGameStore(GameStore):
         }
         if game.result is not None:
             mapping["result"] = game.result.model_dump_json()
-        await self._rc.hset(_game_key(game_id), mapping=mapping)
+        await self._rc.hset(_game_key(game_id), mapping=mapping)  # type: ignore[misc]
 
     async def get_game(self, game_id: str) -> Game | None:
         pipe = self._rc.pipeline()
@@ -137,7 +137,7 @@ class RedisGameStore(GameStore):
         )
 
     async def get_moves(self, game_id: str) -> list[str]:
-        return await self._rc.lrange(_moves_key(game_id), 0, -1)
+        return await self._rc.lrange(_moves_key(game_id), 0, -1)  # type: ignore[misc]
 
     async def append_move(self, game_id: str, san: str) -> GameResult | None:
         # Fetch current game state from Redis store
@@ -156,10 +156,10 @@ class RedisGameStore(GameStore):
         return result
 
     async def append_chat(self, game_id: str, msg: ChatMessage) -> None:
-        await self._rc.rpush(_chat_key(game_id), msg.model_dump_json())
+        await self._rc.rpush(_chat_key(game_id), msg.model_dump_json())  # type: ignore[misc]
 
     async def _set_result(self, game_id: str, result: GameResult) -> None:
-        await self._rc.hset(
+        await self._rc.hset(  # type: ignore[misc]
             _game_key(game_id), mapping={"result": result.model_dump_json()}
         )
 
@@ -202,8 +202,8 @@ class MemoryGameStore(GameStore):
         game = self._games.get(game_id)
         if game is None:
             return None
+        result = _test_move(game, san)  # raises if illegal; game.moves not yet mutated
         game.moves.append(san)
-        result = _test_move(game, san)
         if result is not None:
             game.result = result
         return result

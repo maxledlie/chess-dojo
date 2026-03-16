@@ -20,6 +20,7 @@ async def matches_consumer(state: AppState, consumer_id: str):
     Reads matched pairs from the mm:matches Redis stream and notifies both players
     via their WebSocket connections.
     """
+    assert state.redis is not None, "matches_consumer requires a Redis connection"
     rc: redis.Redis = state.redis
     while True:
         try:

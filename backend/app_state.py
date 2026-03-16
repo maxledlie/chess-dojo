@@ -6,7 +6,7 @@ from websocket.manager import ConnectionManager
 
 
 class AppState:
-    def __init__(self, redis: redis.Redis, game_store: GameStore, game_request_store: GameRequestStore):
+    def __init__(self, redis: redis.Redis | None, game_store: GameStore, game_request_store: GameRequestStore):
         self.redis = redis
         self.game_store = game_store
         self.game_request_store = game_request_store
